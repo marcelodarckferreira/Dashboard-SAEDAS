@@ -1,0 +1,28 @@
+# Layout base
+#MainMenu {visibility: visible;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+
+.block-container {
+    padding-top: 1rem;
+    padding-bottom: 0rem;
+}
+
+[data-testid="stImage"] {
+    margin-top: -2rem;
+}
+
+.logo-container {
+    margin-bottom: 20px;
+}
+
+.title-container {
+    text-align: right;
+    width: 100%;
+    padding-top: 1rem;
+}
+
+# Footer padrão do Streamlit
+.css-164nlkn.e1fqkh3o1 {  /* seletor depende de versão; manter oculto */
+    display: none;
+}

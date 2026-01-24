@@ -1,0 +1,12 @@
+{
+    // 👉 Configuração do Python
+    "python.defaultInterpreterPath": "C:\\Work\\Dev\\Python\\SAEDAS\\.venv\\Scripts\\python.exe",
+    "python.terminal.activateEnvironment": true,
+
+    // 👉 Liberação de execução de comandos no Chat/Codex
+    "chat.command.runWithoutApproval": true,
+    "chat.command.runWithoutApprovalInTrustedWorkspace": true,
+
+    // 👉 Segurança de Workspace (mantém a noção de ambientes confiáveis)
+    "security.workspace.trust.enabled": true
+}

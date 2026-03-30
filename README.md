@@ -1,98 +1,263 @@
-# SAEDAS - Sistema de Análise Estatística e Dados de Assistência à Saúde
+# SAEDAS — Sistema de Análise Estatística e Dados de Assistência à Saúde
 
-## Descrição
-O **SAEDAS** é uma plataforma analítica desenvolvida para centralizar, processar e visualizar dados críticos de saúde escolar e assistência social. Atuando como um *Dashboard* tático-operacional, o sistema permite o monitoramento em tempo real de indicadores de encaminhamentos médicos, exames, vacinação, nutrição e perfis individuais de alunos.
+## Visão Geral
 
-Projetado para ambientes de alta disponibilidade, o core da aplicação utiliza **Streamlit** para renderização reativa de dados, permitindo que gestores e profissionais de saúde tomem decisões baseadas em evidências (Data-Driven Decision Making). A interface é otimizada para usabilidade, garantindo acesso rápido a métricas consolidadas e detalhamento granular por indivíduo.
+O **SAEDAS** é um dashboard analítico para monitoramento de indicadores de saúde escolar e assistência social. A plataforma centraliza dados de encaminhamentos médicos, exames, vacinação, nutrição e perfis individuais de alunos, permitindo análise por Unidade Regional de Governo (URG), escola e período.
 
-## Arquitetura
-A arquitetura do SAEDAS segue o padrão **Microservices-ready**, desacoplada e containerizada para garantir escalabilidade e portabilidade.
+Construído com **Streamlit**, o sistema consome dados extraídos de um banco SQL Server (via stored procedures) e exportados como CSVs. A interface oferece filtros interativos, gráficos dinâmicos e deep linking para perfis de alunos.
 
-### Componentes Principais:
-1.  **Frontend/Application Layer (Streamlit)**:
-    *   **Engine**: Python 3.12+ com Streamlit Framework.
-    *   **Responsabilidade**: Gerenciamento de estado de sessão (`st.session_state`), roteamento de páginas (`option_menu`) e renderização de componentes visuais.
-    *   **Modularidade**: O código é segmentado em módulos funcionais (`app_pages/`) para manutenção isolada de cada domínio (Home, Consulta, Exame, Vacinação, Nutrição, Aluno).
+---
 
-2.  **Data Processing Layer (Pandas/NumPy)**:
-    *   Camada interna responsável pela ingestão, limpeza e transformação de *dataframes*. Otimizada para operações vetoriais, minimizando o *overhead* de CPU durante o processamento de grandes volumes de dados.
+## Objetivo
 
-3.  **Containerization (Docker)**:
-    *   O ambiente é encapsulado em uma imagem **Docker** baseada no `python:3.12.6-slim`, garantindo um *footprint* reduzido e consistência entre ambientes de desenvolvimento e produção.
+Fornecer aos gestores e profissionais de saúde um painel tático-operacional com:
 
-4.  **Entry Points**:
-    *   `app.py`: Gateway principal da aplicação. Gerencia o ciclo de vida da aplicação, injeção de dependências e roteamento global.
-    *   `Dockerfile`: Definição imutável da infraestrutura de execução.
-    *   `docker-compose.yml`: Orquestração simplificada para *deploy* local e *hot-reloading*.
+- Visão consolidada de KPIs (alunos atendidos, profissionais, encaminhamentos, exames, vacinas)
+- Drill-down por URG, escola, tipo de unidade, ano e aluno
+- Acompanhamento longitudinal (2022–2025) com comparação por período
+- Acesso direto a perfis individuais via deep link
+
+---
+
+## Stack Tecnológica
+
+| Camada           | Tecnologia                                   |
+|------------------|----------------------------------------------|
+| **Aplicação**    | Python 3.12 · Streamlit 1.49                 |
+| **Dados**        | Pandas 2.3 · NumPy 2.3 · PyArrow 21         |
+| **Visualização** | Plotly 6.3 · Altair 5.5                      |
+| **Estatística**  | SciPy 1.16 · Statsmodels 0.14               |
+| **UI**           | streamlit-option-menu · streamlit-aggrid     |
+| **Container**    | Docker (python:3.12.6-slim)                  |
+| **Banco de dados** | SQL Server (externo, via `bcp`/`sqlcmd`)   |
+
+---
+
+## Estrutura do Projeto
+
+```text
+app/
+├── app.py                    # Entrypoint principal (Streamlit)
+├── app_pages/                # Páginas do dashboard
+│   ├── home.py               #   Dashboard Geral (KPIs)
+│   ├── consulta.py           #   Encaminhamentos médicos
+│   ├── exame.py              #   Exames
+│   ├── vacinacao.py          #   Vacinação
+│   ├── nutricao.py           #   Nutrição
+│   └── aluno.py              #   Perfil individual do aluno
+├── components/               # Componentes reutilizáveis da UI
+│   ├── sidebar_filters.py    #   Filtros dinâmicos (Ano, URG, Escola, Tipo)
+│   └── footer_personal.py    #   Rodapé
+├── utils/                    # Utilitários
+│   ├── data_loader.py        #   Leitura de CSV com fallback de encoding
+│   ├── schemas.py            #   Schemas esperados por página
+│   ├── page_helpers.py       #   Helpers compartilhados entre páginas
+│   └── styles.py             #   Injeção de CSS global
+├── data/                     # CSVs de dados (não versionados — .gitignore)
+├── assets/                   # Arquivos estáticos (CSS, logo, favicon)
+├── .streamlit/config.toml    # Configuração do Streamlit
+├── exportar_dados_csv.sh     # Script de extração de dados via bcp
+└── fechamento_saedas.sh      # Script de fechamento de período via sqlcmd
+Dockerfile                    # Imagem Docker (python:3.12.6-slim)
+docker-compose.yml            # Orquestração local
+requirements.txt              # Dependências Python
+```
+
+---
+
+## Pré-requisitos
+
+| Requisito              | Versão mínima     |
+|------------------------|--------------------|
+| Python                 | 3.12+              |
+| Docker Engine          | 20.10+             |
+| Docker Compose         | 2.0+               |
+| Git                    | qualquer recente   |
+
+> **Nota:** No ambiente de produção (Linux), os scripts `.sh` requerem `mssql-tools` (`bcp` e `sqlcmd`) para comunicação com o SQL Server.
+
+---
 
 ## Instalação
-Siga os passos abaixo para preparar o ambiente de execução.
 
-### Pré-requisitos
-*   **Docker Engine** (v20.10+)
-*   **Docker Compose** (v2.0+)
-*   **Git**
+### 1. Clone o repositório
 
-### Procedimento de Setup
-1.  Clone o repositório para o seu ambiente local:
-    ```bash
-    git clone https://usuario@repositorio.com/saedas.git
-    cd SAEDAS
-    ```
+```bash
+git clone <url-do-repositorio>
+cd SAEDAS
+```
 
-2.  (Opcional) Se optar por execução sem Docker (Virtual Environment):
-    ```bash
-    python -m venv .venv
-    # Windows
-    .\.venv\Scripts\activate
-    # Linux/Mac
-    source .venv/bin/activate
-    
-    pip install -r requirements.txt
-    ```
+### 2. Ambiente local (desenvolvimento)
 
-3.  Build e execução via Docker (Recomendado):
-    ```bash
-    docker-compose up --build -d
-    ```
+```bash
+python -m venv .venv
 
-O sistema estará acessível em `http://localhost:8501`.
+# Windows
+.\.venv\Scripts\activate
 
-## Configuração de Segurança
-A segurança do SAEDAS é projetada em camadas (Defense in Depth). Abaixo estão as diretrizes implementadas e recomendadas:
+# Linux/macOS
+source .venv/bin/activate
 
-### Nível de Aplicação
-*   **Input Sanitization**: O Streamlit abstrai a renderização direta de HTML, mitigando riscos de XSS (Cross-Site Scripting), exceto onde `unsafe_allow_html=True` é explicitamente utilizado. Nestes pontos, o código foi auditado para garantir que apenas conteúdo estático e confiável seja injetado.
-*   **Session Management**: O gerenciamento de estado é isolado por instância de usuário, prevenindo *Session Hijacking* básico em ambientes compartilhados.
+pip install -r requirements.txt
+```
 
-### Nível de Infraestrutura (Rede/Linux)
-*   **Container Isolation**: O `Dockerfile` utiliza um usuário não-root (prática recomendada para produção - *to be implemented*) para limitar o vetor de ataque em caso de compromisso do container.
-*   **Network Segmentation**: No `docker-compose.yml`, a aplicação expõe a porta `8501` apenas para o *host*. Em produção, recomenda-se o uso de um **Reverse Proxy** (Nginx/Traefik) com terminação SSL/TLS (HTTPS) à frente do container.
-*   **Firewall Rules**:
-    *   Bloquear acesso externo direto à porta 8501.
-    *   Permitir tráfego apenas via porta 443 (HTTPS) através do Load Balancer/Proxy.
+### 3. Via Docker (recomendado para produção)
+
+```bash
+docker compose up --build -d
+```
+
+---
+
+## Configuração
+
+### Streamlit
+
+O arquivo `app/.streamlit/config.toml` define a configuração do servidor:
+
+```toml
+[server]
+headless = true
+port = 8501
+enableCORS = false
+enableXsrfProtection = false
+```
+
+### Dados
+
+Os CSVs da pasta `app/data/` são gerados externamente pelo script `exportar_dados_csv.sh`, que executa stored procedures no SQL Server e exporta os resultados via `bcp`.
+
+> ⚠️ **Os arquivos CSV não são versionados** (`.gitignore`). No primeiro setup, é necessário executar o script de extração ou obter os CSVs de outra fonte.
+
+### Variáveis de Ambiente
+
+Atualmente, as credenciais de banco estão hardcoded nos scripts `.sh`. **Recomenda-se** migrá-las para variáveis de ambiente:
+
+```bash
+export SAEDAS_DB_USER="usuario"
+export SAEDAS_DB_PASSWORD="senha"
+export SAEDAS_DB_SERVER="host,porta"
+export SAEDAS_DB_NAME="database"
+```
+
+---
 
 ## Uso
-O sistema é intuitivo e dividido em seções funcionais na barra lateral (Sidebar).
 
-### Execução Local (Dev Mode)
-Para iniciar o servidor de desenvolvimento com *hot-reload* ativado:
+### Execução local (dev mode com hot-reload)
+
 ```bash
 streamlit run app/app.py
 ```
 
-### Navegação e Funcionalidades
-1.  **Dashboard Geral (Início)**: Visão macro dos indicadores de desempenho (KPIs) de saúde.
-2.  **Módulos Específicos**:
-    *   **Encaminhamentos**: Gestão de fluxo de pacientes para especialistas.
-    *   **Exames & Vacinação**: Controle de prontuários e cobertura vacinal.
-    *   **Nutrição**: Monitoramento antropométrico e dietético.
-3.  **Deep Linking**: O sistema suporta parâmetros de URL para acesso direto a perfis de alunos.
-    *   Exemplo: `http://localhost:8501/?menu=Aluno&aluno=NomeDoAluno&nasc=2010-01-01`
-    *   Essa funcionalidade permite integração com sistemas externos para redirecionamento rápido.
+Acesse: `http://localhost:8501`
 
-### Exportação de Dados
-Scripts auxiliares em `bash` estão disponíveis na raiz para operações de dados (ex: `app/exportar_dados_csv.sh`), permitindo dumps controlados da base de dados para análise externa. Executar via terminal dentro do container:
+### Execução via Docker
+
 ```bash
-docker exec -it <container_id> /bin/bash /app/exportar_dados_csv.sh
+docker compose up --build -d
+docker compose logs -f streamlit    # Acompanhar logs
+docker compose down                  # Parar
 ```
+
+### Navegação
+
+| Página               | Função                                                   |
+|-----------------------|----------------------------------------------------------|
+| **Início**            | Dashboard geral com KPIs e visão macro                  |
+| **Encaminhamentos**   | Análise de encaminhamentos médicos por URG/escola       |
+| **Exames**            | Controle de exames realizados                            |
+| **Vacinação**         | Cobertura vacinal e acompanhamento por aluno            |
+| **Nutrição**          | Monitoramento antropométrico (peso, altura, IMC)        |
+| **Aluno**             | Perfil individual com histórico completo                |
+
+### Deep Linking
+
+O sistema suporta acesso direto a um perfil de aluno via parâmetros de URL:
+
+```
+http://localhost:8501/?menu=Aluno&aluno=NomeDoAluno&nasc=2010-01-01
+```
+
+Isso permite integração com sistemas externos para redirecionamento rápido.
+
+---
+
+## Comandos Disponíveis
+
+| Comando                                | Descrição                             |
+|----------------------------------------|---------------------------------------|
+| `streamlit run app/app.py`             | Inicia o servidor de desenvolvimento  |
+| `docker compose up --build -d`         | Build e execução em container         |
+| `docker compose logs -f streamlit`     | Acompanhar logs em tempo real         |
+| `docker compose down`                  | Parar os serviços                     |
+| `bash app/exportar_dados_csv.sh`       | Extrair dados do SQL Server           |
+| `bash app/fechamento_saedas.sh`        | Executar fechamento de período        |
+
+---
+
+## Build / Deploy
+
+### Docker em produção
+
+```bash
+docker compose up --build -d
+```
+
+A imagem `dashboard-saedas:latest` é construída a partir do `Dockerfile` utilizando `python:3.12.6-slim`. O volume `./app:/app` no `docker-compose.yml` mapeia o código para hot-reload.
+
+### Extração de dados (crontab)
+
+No servidor de produção, os scripts de exportação são agendados via `crontab` para atualização periódica dos CSVs:
+
+```bash
+crontab -e
+# Adicionar agenda, ex:
+# 0 6 * * * /media/db/saedas/app/exportar_dados_csv.sh
+# 0 5 * * 1 /media/db/saedas/app/fechamento_saedas.sh
+```
+
+---
+
+## Testes
+
+Atualmente não há suíte de testes automatizados. Para validação:
+
+1. Execute `streamlit run app/app.py` e verifique as páginas afetadas
+2. Valide deep links: `/?menu=Aluno&aluno=Nome&nasc=2010-01-01`
+3. Para novas funcionalidades, crie testes em `tests/` usando `pytest` com convenção `test_*.py`
+
+---
+
+## Segurança e Notas Operacionais
+
+### Dados Sensíveis
+
+- Os CSVs contêm **dados de saúde e dados pessoais de alunos** (LGPD). Não devem ser versionados nem compartilhados externamente sem sanitização.
+- Os arquivos `.env` e `.streamlit/secrets.toml` são ignorados pelo Git.
+
+### Credenciais
+
+- Os scripts `.sh` contêm credenciais hardcoded de banco de dados. **Migre para variáveis de ambiente** antes de publicar o repositório.
+
+### Produção
+
+- Utilize um **reverse proxy** (Nginx/Traefik) com terminação SSL/TLS à frente do container.
+- Bloqueie acesso externo direto à porta `8501`; exponha apenas via HTTPS (443).
+- O `Dockerfile` executa como root — considere adicionar um usuário não-root para produção.
+- A flag `enableXsrfProtection = false` no `config.toml` deve ser reavaliada para ambientes expostos à internet.
+
+---
+
+## Contribuição
+
+1. Crie uma branch a partir de `main`
+2. Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `chore:`
+3. Inclua resumo, módulos afetados e passos de validação manual no PR
+4. Adicione screenshots para mudanças visuais
+
+---
+
+## Licença
+
+Nenhuma licença definida. Projeto de uso interno.

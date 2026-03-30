@@ -35,12 +35,7 @@ $RECYCLE.BIN/
 # =============================================================================
 
 # Visual Studio Code
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-!.vscode/profiles/
+.vscode/
 *.code-workspace
 
 # Local History for Visual Studio Code

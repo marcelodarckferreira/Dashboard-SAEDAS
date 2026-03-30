@@ -71,9 +71,9 @@ def render_grouped_bar(
     )
     fig.update_traces(textposition="auto")
     st.subheader(title)
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, use_container_width=True)
     st.dataframe(
-        group.sort_values(value_col, ascending=False), width="stretch", hide_index=True
+        group.sort_values(value_col, ascending=False), use_container_width=True, hide_index=True
     )
     st.markdown(f"**Total: {total:,.0f}**".replace(",", "."))
 
@@ -97,8 +97,8 @@ def render_evolucao(df, value_col="Quantidade"):
         separators=",.",
         yaxis=dict(tickformat=",.0f"),
     )
-    st.plotly_chart(fig, width="stretch")
-    st.dataframe(evolucao, width="stretch", hide_index=True)
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(evolucao, use_container_width=True, hide_index=True)
     st.markdown(f"**Total: {evolucao[value_col].sum():,.0f}**".replace(",", "."))
 
 
@@ -129,9 +129,9 @@ def render_top_por_urg(df, value_col, titulo, label_col):
         text="% na URG",
     )
     fig.update_traces(textposition="auto")
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, use_container_width=True)
     st.dataframe(
-        group.sort_values(value_col, ascending=False), width="stretch", hide_index=True
+        group.sort_values(value_col, ascending=False), use_container_width=True, hide_index=True
     )
 
 

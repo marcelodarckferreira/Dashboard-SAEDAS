@@ -177,7 +177,7 @@ def page_exame():
             "Nenhum dado disponível para o comparativo anual geral com os filtros atuais."
         )
     else:
-        st.dataframe(df_cmp_display, width="stretch", hide_index=True)
+        st.dataframe(df_cmp_display, use_container_width=True, hide_index=True)
 
     st.subheader("Distribuição por Regulação")
     reg_group = df_filt.groupby("Regulacao")["Quantidade"].sum().reset_index()
@@ -196,10 +196,10 @@ def page_exame():
             color="Regulacao",
         )
         fig_reg.update_traces(textposition="auto")
-        st.plotly_chart(fig_reg, width="stretch")
+        st.plotly_chart(fig_reg, use_container_width=True)
         st.dataframe(
             reg_group.sort_values("Quantidade", ascending=False),
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
         )
         st.markdown(
@@ -240,7 +240,7 @@ def page_exame():
                 df_ano_filtrado["Escola"].astype(str).isin(escolas_selecionadas_ano)
             ]
 
-        st.dataframe(df_ano_filtrado, width="stretch", hide_index=True)
+        st.dataframe(df_ano_filtrado, use_container_width=True, hide_index=True)
 
     st.markdown("---")
     st.subheader("Detalhamento por Aluno (ExameAluno)")
@@ -341,7 +341,7 @@ def page_exame():
             preview_limit = 500
             st.dataframe(
                 df_aluno_para_exibir.head(preview_limit),
-                width="stretch",
+                use_container_width=True,
                 hide_index=True,
                 column_config={
                     "Menu": st.column_config.LinkColumn(

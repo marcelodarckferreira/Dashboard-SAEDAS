@@ -522,7 +522,7 @@ def page_home():
             subset=numeric_like_cols, **right_align_props
         ).hide(axis="index")
 
-        st.dataframe(styler_home, width="stretch", hide_index=True)
+        st.dataframe(styler_home, use_container_width=True, hide_index=True)
 
         if st.button("Copiar tabela (Comparativo Geral)", key="copy_home_ano_table"):
             try:
@@ -582,7 +582,7 @@ def page_home():
                 },  # mantém padrão de subtítulos
             )
 
-            st.plotly_chart(fig_cov, width="stretch")
+            st.plotly_chart(fig_cov, use_container_width=True)
 
         else:
             st.info("Sem dados de cobertura para os filtros selecionados.")
@@ -620,7 +620,7 @@ def page_home():
                     texttemplate="%{y:,.0f}", textposition="outside"
                 )
 
-                st.plotly_chart(fig_home_bar, width="stretch")
+                st.plotly_chart(fig_home_bar, use_container_width=True)
 
     if df_filtrado.empty and (anos_str != "Todos" or urgs_str != "Todos"):
         st.warning(
@@ -686,7 +686,7 @@ def page_home():
 
             fig_prof_pie.update_layout(separators=".", legend_title_text="Atendimento")
 
-            st.plotly_chart(fig_prof_pie, width="stretch")
+            st.plotly_chart(fig_prof_pie, use_container_width=True)
 
         else:
             st.info(
@@ -767,7 +767,7 @@ def page_home():
                 texttemplate="%{text:,.0f}", textposition="outside"
             )
 
-            st.plotly_chart(fig_prof_total_bar_yearly, width="stretch")
+            st.plotly_chart(fig_prof_total_bar_yearly, use_container_width=True)
 
         else:
             st.info(
@@ -869,7 +869,7 @@ def page_home():
                         texttemplate="%{text:,.0f}", textposition="outside"
                     )
 
-                    st.plotly_chart(fig_ano_action, width="stretch")
+                    st.plotly_chart(fig_ano_action, use_container_width=True)
 
                 else:
                     st.info(
@@ -991,7 +991,7 @@ def page_home():
             subset=numeric_like_cols_urg, **{"text-align": "right"}
         ).hide(axis="index")
 
-        st.dataframe(styler_urg, width="stretch", hide_index=True)
+        st.dataframe(styler_urg, use_container_width=True, hide_index=True)
 
         if st.button("Copiar tabela (Comparativo URG)", key="copy_home_urg_table"):
             try:
@@ -1049,7 +1049,7 @@ def page_home():
                 texttemplate="%{value:,.0f}", textposition="outside"
             )
 
-            st.plotly_chart(fig_urg_prof, width="stretch")
+            st.plotly_chart(fig_urg_prof, use_container_width=True)
 
         else:
             st.info(
@@ -1104,7 +1104,7 @@ def page_home():
 
             fig_urg.update_traces(texttemplate="%{value:,.0f}", textposition="outside")
 
-            st.plotly_chart(fig_urg, width="stretch")
+            st.plotly_chart(fig_urg, use_container_width=True)
 
         else:
             st.info(
@@ -2279,7 +2279,7 @@ def page_home():
             subset=numeric_like_cols_escola, **{"text-align": "right"}
         ).hide(axis="index")
 
-        st.dataframe(styler_escola, width="stretch", hide_index=True)
+        st.dataframe(styler_escola, use_container_width=True, hide_index=True)
 
         if st.button(
             "Copiar tabela (Comparativo Escola)", key="copy_home_escola_table"

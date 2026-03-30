@@ -182,7 +182,7 @@ def page_nutricao():
             "Nenhum dado disponível para o comparativo anual geral com os filtros atuais."
         )
     else:
-        st.dataframe(df_cmp_display, width="stretch", hide_index=True)
+        st.dataframe(df_cmp_display, use_container_width=True, hide_index=True)
 
     st.subheader("Distribuição por Situação Nutricional")
     nutricao_group = df_filt.groupby("Nutricao")["Quantidade"].sum().reset_index()
@@ -201,10 +201,10 @@ def page_nutricao():
             color="Nutricao",
         )
         fig_nutricao.update_traces(textposition="auto")
-        st.plotly_chart(fig_nutricao, width="stretch")
+        st.plotly_chart(fig_nutricao, use_container_width=True)
         st.dataframe(
             nutricao_group.sort_values("Quantidade", ascending=False),
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
         )
         st.markdown(
@@ -244,7 +244,7 @@ def page_nutricao():
                 df_ano_filtrado["Escola"].astype(str).isin(escolas_selecionadas_ano)
             ]
 
-        st.dataframe(df_ano_filtrado, width="stretch", hide_index=True)
+        st.dataframe(df_ano_filtrado, use_container_width=True, hide_index=True)
 
     st.markdown("---")
     st.subheader("Detalhamento por Aluno (NutricaoAluno)")

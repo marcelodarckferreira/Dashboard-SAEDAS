@@ -231,6 +231,10 @@ def build_comparativo_anual(
         col_order.extend(add_year_block(2024, 2025))
     if "2025" in year_cols_str:
         col_order.append("2025")
+    if "2025" in year_cols_str and "2026" in year_cols_str:
+        col_order.extend(add_year_block(2025, 2026))
+    if "2026" in year_cols_str:
+        col_order.append("2026")
     if "Total" in df_cmp.columns:
         col_order.append("Total")
 

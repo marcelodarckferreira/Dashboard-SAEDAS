@@ -91,6 +91,8 @@ def sidebar_filters(df, filter_config):
     # --- Filtro por URG ---
     urg_col_config_name = filter_config.get('urg_col_name', 'URG') # Nome da coluna URG a ser usada
     urgs_disponiveis_geral = sorted(list(df_options_source[urg_col_config_name].dropna().unique())) if urg_col_config_name in df_options_source.columns else []
+    urgs_selecionadas_usr = [] # Inicializa para evitar NameError no filtro de escola
+
     if filter_config.get('urg', False):
         if not urgs_disponiveis_geral and urg_col_config_name in df_options_source.columns:
             st.sidebar.warning(f"Não há dados de '{urg_col_config_name}' disponíveis para filtrar.")
@@ -110,22 +112,30 @@ def sidebar_filters(df, filter_config):
 
     # --- Filtro por Escola ---
     escola_column_name = 'Escola' 
-    escolas_disponiveis_geral = sorted(list(df_options_source[escola_column_name].dropna().unique())) if escola_column_name in df_options_source.columns else []
-    if filter_config.get('escola', False): 
-        if not escolas_disponiveis_geral and escola_column_name in df_options_source.columns:
-            st.sidebar.warning("Não há dados de 'Escola' disponíveis para filtrar.")
+    if filter_config.get('escola', False):
+        # Lógica de cascata: se URG selecionada, filtra escolas disponíveis
+        if urgs_selecionadas_usr and urg_col_config_name in df_options_source.columns:
+            df_escolas_filtradas = df_options_source[df_options_source[urg_col_config_name].isin(urgs_selecionadas_usr)]
+            escolas_disponiveis = sorted(list(df_escolas_filtradas[escola_column_name].dropna().unique()))
+        else:
+            escolas_disponiveis = sorted(list(df_options_source[escola_column_name].dropna().unique())) if escola_column_name in df_options_source.columns else []
+
+        if not escolas_disponiveis and escola_column_name in df_options_source.columns:
+            st.sidebar.warning("Não há escolas disponíveis para a URG selecionada.")
 
         escolas_selecionadas_usr = st.sidebar.multiselect(
             "Selecione a(s) Escola(s):",
-            options=escolas_disponiveis_geral,
+            options=escolas_disponiveis,
             default=[],
             placeholder="Todas as Escolas"
         )
-        escolas_para_aplicar_filtro = escolas_disponiveis_geral if not escolas_selecionadas_usr else escolas_selecionadas_usr
+        escolas_para_aplicar_filtro = escolas_disponiveis if not escolas_selecionadas_usr else escolas_selecionadas_usr
         selections_dict['escola'] = escolas_para_aplicar_filtro
         if escola_column_name in df_filtered.columns and escolas_para_aplicar_filtro:
             df_filtered = df_filtered[df_filtered[escola_column_name].isin(escolas_para_aplicar_filtro)]
     else:
+        # Se o filtro não está ativo, retorna todas as escolas do dataset original para o selections_dict
+        escolas_disponiveis_geral = sorted(list(df_options_source[escola_column_name].dropna().unique())) if escola_column_name in df_options_source.columns else []
         selections_dict['escola'] = escolas_disponiveis_geral
 
     # --- Filtro por Tipo (de Escola/Instituição) ---

@@ -429,7 +429,7 @@ def page_home():
     else:
         df_home_ano_exibir = df_home_ano.copy()
 
-        year_cols = ["2022", "2023", "2024", "2025"]
+        year_cols = ["2022", "2023", "2024", "2025", "2026"]
 
         numeric_cols = [
             col for col in year_cols + ["Total"] if col in df_home_ano_exibir.columns
@@ -438,7 +438,10 @@ def page_home():
         if numeric_cols:
             df_home_ano_exibir[numeric_cols] = df_home_ano_exibir[numeric_cols].apply(
                 pd.to_numeric, errors="coerce"
-            )
+            ).fillna(0)
+
+        # Recalcula o Total para incluir 2026
+        df_home_ano_exibir["Total"] = df_home_ano_exibir[year_cols].sum(axis=1)
 
         for prev, curr in zip(year_cols, year_cols[1:]):
             if (
@@ -462,6 +465,9 @@ def page_home():
                 )
 
         col_order = []
+
+        if "URG" in df_home_ano_exibir.columns:
+            col_order.append("URG")
 
         if "Descricao" in df_home_ano_exibir.columns:
             col_order.append("Descricao")
@@ -514,7 +520,7 @@ def page_home():
                 lambda x: f"{x:,.1f}".replace(",", ".") if pd.notna(x) else ""
             )
 
-        numeric_like_cols = [c for c in df_home_ano_display.columns if c != "Descricao"]
+        numeric_like_cols = [c for c in df_home_ano_display.columns if c not in ["Descricao", "URG"]]
 
         right_align_props = {"text-align": "right"}
 
@@ -904,7 +910,7 @@ def page_home():
                 df_urg_exibir["URG"].isin(urgs_aplicadas_home)
             ]
 
-        year_cols = ["2022", "2023", "2024", "2025"]
+        year_cols = ["2022", "2023", "2024", "2025", "2026"]
 
         numeric_cols = [
             col for col in year_cols + ["Total"] if col in df_urg_exibir.columns
@@ -913,7 +919,10 @@ def page_home():
         if numeric_cols:
             df_urg_exibir[numeric_cols] = df_urg_exibir[numeric_cols].apply(
                 pd.to_numeric, errors="coerce"
-            )
+            ).fillna(0)
+
+        # Recalcula o Total para incluir 2026
+        df_urg_exibir["Total"] = df_urg_exibir[year_cols].sum(axis=1)
 
         for prev, curr in zip(year_cols, year_cols[1:]):
             if prev in df_urg_exibir.columns and curr in df_urg_exibir.columns:
@@ -2185,7 +2194,7 @@ def page_home():
             df_escola_exibir = df_escola_exibir[
                 df_escola_exibir["Escola"].astype(str).isin(escolas_aplicadas_home)
             ]
-        year_cols_escola = ["2022", "2023", "2024", "2025"]
+        year_cols_escola = ["2022", "2023", "2024", "2025", "2026"]
 
         numeric_cols_escola = [
             c for c in year_cols_escola + ["Total"] if c in df_escola_exibir.columns
@@ -2194,7 +2203,10 @@ def page_home():
         if numeric_cols_escola:
             df_escola_exibir[numeric_cols_escola] = df_escola_exibir[
                 numeric_cols_escola
-            ].apply(pd.to_numeric, errors="coerce")
+            ].apply(pd.to_numeric, errors="coerce").fillna(0)
+        
+        # Recalcula o Total para incluir 2026
+        df_escola_exibir["Total"] = df_escola_exibir[year_cols_escola].sum(axis=1)
 
         for prev, curr in zip(year_cols_escola, year_cols_escola[1:]):
             if prev in df_escola_exibir.columns and curr in df_escola_exibir.columns:

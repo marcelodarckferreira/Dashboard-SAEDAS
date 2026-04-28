@@ -32,6 +32,24 @@ ARQUIVO_CSV05="/media/db/saedas/app/data/DashboardNutricao.csv"
 ARQUIVO_CSV051="/media/db/saedas/app/data/DashboardNutricaoAno.csv"
 ARQUIVO_CSV052="/media/db/saedas/app/data/DashboardNutricaoAluno.csv"
 
+ARQUIVO_CSV06="/media/db/saedas/app/data/DashboardMedico.csv"
+ARQUIVO_CSV061="/media/db/saedas/app/data/DashboardMedicoAno.csv"
+ARQUIVO_CSV062="/media/db/saedas/app/data/DashboardMedicoAluno.csv"
+
+ARQUIVO_CSV07="/media/db/saedas/app/data/DashboardEnfermagem.csv"
+ARQUIVO_CSV071="/media/db/saedas/app/data/DashboardEnfermagemAno.csv"
+ARQUIVO_CSV072="/media/db/saedas/app/data/DashboardEnfermagemAluno.csv"
+
+ARQUIVO_CSV08="/media/db/saedas/app/data/DashboardAssistenciaSocial.csv"
+ARQUIVO_CSV081="/media/db/saedas/app/data/DashboardAssistenciaSocialAno.csv"
+ARQUIVO_CSV082="/media/db/saedas/app/data/DashboardAssistenciaSocialAluno.csv"
+
+ARQUIVO_CSV09="/media/db/saedas/app/data/DashboardProfessor.csv"
+ARQUIVO_CSV091="/media/db/saedas/app/data/DashboardProfessorAno.csv"
+ARQUIVO_CSV092="/media/db/saedas/app/data/DashboardProfessorAluno.csv"
+
+ARQUIVO_CSV10="/media/db/saedas/app/data/DashboardProfissional.csv"
+
 # ======================
 # Stored Procedures
 # ======================
@@ -56,6 +74,24 @@ QUERY05="EXEC usp_Exportar_DashboardNutricao"
 QUERY051="EXEC usp_Exportar_DashboardNutricaoAno"
 QUERY052="EXEC usp_Exportar_DashboardNutricaoAluno"
 
+QUERY06="EXEC usp_Exportar_DashboardMedico"
+QUERY061="EXEC usp_Exportar_DashboardMedicoAno"
+QUERY062="EXEC usp_Exportar_DashboardMedicoAluno"
+
+QUERY07="EXEC usp_Exportar_DashboardEnfermagem"
+QUERY071="EXEC usp_Exportar_DashboardEnfermagemAno"
+QUERY072="EXEC usp_Exportar_DashboardEnfermagemAluno"
+
+QUERY08="EXEC usp_Exportar_DashboardAssistenciaSocial"
+QUERY081="EXEC usp_Exportar_DashboardAssistenciaSocialAno"
+QUERY082="EXEC usp_Exportar_DashboardAssistenciaSocialAluno"
+
+QUERY09="EXEC usp_Exportar_DashboardProfessor"
+QUERY091="EXEC usp_Exportar_DashboardProfessorAno"
+QUERY092="EXEC usp_Exportar_DashboardProfessorAluno"
+
+QUERY10="EXEC usp_Exportar_DashboardProfissional"
+
 # ======================
 # Cabeçalhos CSV corretos
 # ======================
@@ -79,6 +115,24 @@ CABECALHO042="Ano;Aluno;DtNasc;Sexo;Vacina;Dose;Lote;IdUrg;URG;Escola;Tipo;Serie
 CABECALHO05="Ano;IdUrg;URG;Escola;Tipo;Nutricao;Qtd"
 CABECALHO051="URG;Escola;Nutricao;2022;2023;2024;2025;Total"
 CABECALHO052="Ano;Aluno;DtNasc;Sexo;Peso;Altura;IMC;Nutricao;IdUrg;URG;Escola;Tipo;Serie;Turma"
+
+CABECALHO06="Ano;IdUrg;URG;Escola;Tipo;Descricao;Qtd"
+CABECALHO061="URG;Escola;Atendimento;2022;2023;2024;2025;2026;Total"
+CABECALHO062="Ano;ID;Aluno;DtNasc;Sexo;Profissional;IdUrg;URG;Escola;Tipo;Serie;Turma"
+
+CABECALHO07="Ano;IdUrg;URG;Escola;Tipo;Descricao;Qtd"
+CABECALHO071="URG;Escola;Atendimento;2022;2023;2024;2025;2026;Total"
+CABECALHO072="Ano;ID;Aluno;DtNasc;Sexo;Profissional;IdUrg;URG;Escola;Tipo;Serie;Turma"
+
+CABECALHO08="Ano;IdUrg;URG;Escola;Tipo;Descricao;Qtd"
+CABECALHO081="URG;Escola;Atendimento;2022;2023;2024;2025;2026;Total"
+CABECALHO082="Ano;ID;Aluno;DtNasc;Sexo;Profissional;IdUrg;URG;Escola;Tipo;Serie;Turma"
+
+CABECALHO09="Ano;IdUrg;URG;Escola;Tipo;Descricao;Qtd"
+CABECALHO091="URG;Escola;Atendimento;2022;2023;2024;2025;2026;Total"
+CABECALHO092="Ano;ID;Aluno;DtNasc;Sexo;Profissional;IdUrg;URG;Escola;Tipo;Serie;Turma"
+
+CABECALHO10="Ano;IdUrg;URG;Escola;Tipo;Descricao;Qtd"
 
 # ======================
 # Log
@@ -139,6 +193,24 @@ exportar_csv "$QUERY042" "$ARQUIVO_CSV042" "$CABECALHO042" "DashboardVacinacaoAl
 exportar_csv "$QUERY05" "$ARQUIVO_CSV05" "$CABECALHO05" "DashboardNutricao"
 exportar_csv "$QUERY051" "$ARQUIVO_CSV051" "$CABECALHO051" "DashboardNutricaoAno"
 exportar_csv "$QUERY052" "$ARQUIVO_CSV052" "$CABECALHO052" "DashboardNutricaoAluno"
+
+exportar_csv "$QUERY06" "$ARQUIVO_CSV06" "$CABECALHO06" "DashboardMedico"
+exportar_csv "$QUERY061" "$ARQUIVO_CSV061" "$CABECALHO061" "DashboardMedicoAno"
+exportar_csv "$QUERY062" "$ARQUIVO_CSV062" "$CABECALHO062" "DashboardMedicoAluno"
+
+exportar_csv "$QUERY07" "$ARQUIVO_CSV07" "$CABECALHO07" "DashboardEnfermagem"
+exportar_csv "$QUERY071" "$ARQUIVO_CSV071" "$CABECALHO071" "DashboardEnfermagemAno"
+exportar_csv "$QUERY072" "$ARQUIVO_CSV072" "$CABECALHO072" "DashboardEnfermagemAluno"
+
+exportar_csv "$QUERY08" "$ARQUIVO_CSV08" "$CABECALHO08" "DashboardAssistenciaSocial"
+exportar_csv "$QUERY081" "$ARQUIVO_CSV081" "$CABECALHO081" "DashboardAssistenciaSocialAno"
+exportar_csv "$QUERY082" "$ARQUIVO_CSV082" "$CABECALHO082" "DashboardAssistenciaSocialAluno"
+
+exportar_csv "$QUERY09" "$ARQUIVO_CSV09" "$CABECALHO09" "DashboardProfessor"
+exportar_csv "$QUERY091" "$ARQUIVO_CSV091" "$CABECALHO091" "DashboardProfessorAno"
+exportar_csv "$QUERY092" "$ARQUIVO_CSV092" "$CABECALHO092" "DashboardProfessorAluno"
+
+exportar_csv "$QUERY10" "$ARQUIVO_CSV10" "$CABECALHO10" "DashboardProfissional"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Final da execução do script" >> "$LOGFILE"
 echo "" >> "$LOGFILE"

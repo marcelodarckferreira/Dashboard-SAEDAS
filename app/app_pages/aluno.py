@@ -17,7 +17,6 @@ from app.utils.schemas import (
 )
 
 
-@st.cache_data(ttl=3600, show_spinner="Carregando dados dos alunos...")
 def carregar_dados_aluno():
     def load_wrapper(path: str, schema: set[str]):
         df, info = load_csv(path, expected_cols=schema)

@@ -34,7 +34,7 @@ def load_csv(
             - alertas: lista de mensagens de alerta (ex.: colunas faltantes)
     Em caso de falha total na leitura, df será um DataFrame vazio e info.erros trará o motivo.
     """
-    info = {"encoding_usado": None, "erros": [], "alertas": []}
+    info = {"encoding_usado": None, "erros": [], "alertas": [], "alertas_ano": []}
     path = Path(file_path)
     if not path.exists():
         info["erros"].append(f"Arquivo '{path}' não encontrado.")
@@ -80,8 +80,20 @@ def load_csv(
     if expected_cols:
         missing = set(expected_cols) - set(df.columns)
         if missing:
-            info["alertas"].append(
-                f"Colunas ausentes em '{path.name}': {', '.join(sorted(missing))}"
-            )
+            # Separa colunas de ano (ex: '2022', '2026') de colunas estruturais
+            # Colunas de ano ausentes são esperadas quando os dados ainda não existem.
+            missing_years = {c for c in missing if c.isdigit() and len(c) == 4}
+            missing_structural = missing - missing_years
+
+            if missing_structural:
+                info["alertas"].append(
+                    f"Colunas ausentes em '{path.name}': {', '.join(sorted(missing_structural))}"
+                )
+
+            if missing_years:
+                # Registra separadamente para logging/debug sem exibir ao usuário
+                info["alertas_ano"].append(
+                    f"Colunas de ano ausentes em '{path.name}': {', '.join(sorted(missing_years))}"
+                )
 
     return df, info

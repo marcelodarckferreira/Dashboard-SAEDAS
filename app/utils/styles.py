@@ -59,3 +59,52 @@ def render_metric_cards(metrics: list[tuple[str, float | int | str]]) -> None:
         )
         with col:
             st.markdown(card_html, unsafe_allow_html=True)
+
+
+def style_urg_performance_table(df, active_urgs, categoria_col="URG"):
+    """
+    Aplica o estilo de destaque (Highlight) e zebra às tabelas de performance.
+    Garante que as unidades ativas fiquem visivelmente realçadas.
+    """
+    if df is None:
+        return None
+
+    # Se já for um Styler (ex: vindo de build_comparativo_anual), usa-o diretamente.
+    # Caso contrário, cria um Styler a partir do DataFrame.
+    styler = df if hasattr(df, "apply") else df.style
+
+    def _zebra_highlight(row):
+        # O MultiIndex do build_comparativo_anual tem a categoria no nível (col, '')
+        try:
+            val_cat = row[(categoria_col, "")]
+        except (KeyError, IndexError):
+            try:
+                val_cat = row[categoria_col]
+            except:
+                val_cat = None
+
+        is_active = val_cat in active_urgs
+
+        if val_cat == "TOTAL":
+            style = "background-color: #2b3b4e; font-weight: bold; border-top: 2px solid #ffffff; color: #ffffff;"
+        elif is_active:
+            # Vibrant Highlight Pattern
+            style = "background-color: rgba(96, 165, 250, 0.3) !important; border: 2px solid #60a5fa !important; font-weight: bold;"
+        else:
+            # Alternância de cores para zebra
+            bg = "#1e2530" if row.name % 2 == 0 else "#161c26"
+            style = f"background-color: {bg}; border: 1px solid rgba(255, 255, 255, 0.05);"
+        return [style] * len(row)
+
+    hover_styles = [
+        {
+            "selector": "thead th",
+            "props": [("text-align", "center"), ("background-color", "#161c26")],
+        },
+        {
+            "selector": "tbody tr:hover td",
+            "props": [("background-color", "#374151 !important")],
+        },
+    ]
+
+    return styler.apply(_zebra_highlight, axis=1).set_table_styles(hover_styles, overwrite=False)

@@ -1,11 +1,13 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import datetime
 from components.footer_personal import footer_personal
 from components.sidebar_filters import sidebar_filters
 import numpy as np
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
-from app.utils.page_helpers import format_filters_applied
+from app.utils.page_helpers import format_filters_applied, build_comparativo_anual
+from app.utils.state_manager import init_global_state, sync_home_to_sidebar, sync_home_urg_to_sidebar
 from app.utils.data_loader import load_csv
 from app.utils.schemas import (
     SCHEMA_HOME,
@@ -13,13 +15,13 @@ from app.utils.schemas import (
     SCHEMA_HOME_ESCOLA_ANO,
     SCHEMA_HOME_URG_ANO,
 )
+from app.utils.styles import apply_global_css, style_urg_performance_table
 
 AUTO_ID_COLUMN = "::auto_unique_id::"
 
 EXCLUDED_EXPORT_COLUMNS = [AUTO_ID_COLUMN]
 
 
-@st.cache_data(ttl=3600, show_spinner="Carregando dados gerais...")
 def carregar_dados_home():
     """Carrega todos os 4 datasets da Home com tratamento de erros."""
     csv_file = "data/DashboardHome.csv"
@@ -111,6 +113,29 @@ def calcular_altura_aggrid(
 
 
 def page_home():
+    # Inicializa o estado global sincronizado (Anos e URGs)
+    init_global_state()
+
+    # --- INICIALIZAÇÃO DOS TOGGLES DE INDICADORES ---
+    if "home_toggles" not in st.session_state:
+        st.session_state["home_toggles"] = {
+            "TOTAL DE ALUNOS (ESCOLA)": True,
+            "ALUNOS ATENDIDOS": True,
+            "ATENDIMENTOS (PROFISSIONAIS)": True,
+            "ATEND. PROFESSOR": True,
+            "ATEND. PSICÓLOGO": True,
+            "ATEND. ASSIST. SOCIAL": True,
+            "ATEND. ENFERMAGEM": True,
+            "ATEND. MÉDICO": True,
+            "ENCAMINHAMENTOS": True,
+            "EXAMES": True,
+            "DOSES DE VACINA APLICADAS": True,
+            "ALUNOS VACINADOS": True,
+        }
+
+    def toggle_indicator(label):
+        st.session_state["home_toggles"][label] = not st.session_state["home_toggles"][label]
+    
     st.title("Visão Geral do SAEDAS")
 
     st.markdown(
@@ -197,11 +222,86 @@ def page_home():
 
     # SCHEMA_HOME já foi validado no load_csv; mensagens de alerta foram exibidas acima.
 
-    # --- Filtros na Sidebar ---
+    # SCHEMA_HOME já foi validado no load_csv; mensagens de alerta foram exibidas acima.
 
+    # --- Filtros na Sidebar ---
     home_filter_config = {"ano": True, "urg": True, "escola": True, "tipo": False}
 
     df_filtrado, selections = sidebar_filters(df, home_filter_config)
+    
+    
+    # --- SELETOR TEMPORAL MESTRE (INDICADORES E PÁGINA) ---
+    current_year = datetime.datetime.now().year
+    years_options = sorted([current_year - i for i in range(5)], reverse=True)
+    
+    st.segmented_control(
+        label="Ano(s) de Referência:",
+        options=years_options,
+        selection_mode="multi",
+        key="home_year_buttons",
+        on_change=sync_home_to_sidebar,
+        label_visibility="collapsed"
+    )
+    # Sincroniza a variável local com o estado global
+    selected_years_comp = st.session_state["global_years"]
+    
+    
+    # --- Aplicação Final dos Filtros (Fontes de Verdade Globais) ---
+    # Usamos o DF base para garantir que as seleções cross-page/cross-component sejam respeitadas integralmente
+    df_base_final = df.copy()
+    
+    # 1. Filtro de Escola (Cascata da Sidebar)
+    # Nota: selections['escola'] já reflete o filtro de escola aplicado.
+    if selections.get("escola"):
+        # Se 'Todas as Escolas' não for o estado (sidebar_filters lida com isso retornando todas)
+        # Verificamos se a lista retornada é diferente da lista total de escolas no df original
+        all_schools = set(df["Escola"].dropna().unique())
+        selected_schools = set(selections["escola"])
+        if selected_schools != all_schools:
+            df_base_final = df_base_final[df_base_final["Escola"].isin(selections["escola"])]
+            
+    # 2. Filtro de Anos (Global - Centralizado no State Manager)
+    if selected_years_comp:
+        df_base_final = df_base_final[df_base_final["Ano"].isin(selected_years_comp)]
+    else:
+        # Se nenhum ano selecionado, o dashboard fica vazio por padrão
+        df_base_final = pd.DataFrame()
+        
+    # 3. Filtro de URGs (Global - Vinculação Bidirecional Tabela/Sidebar)
+    current_urgs = st.session_state["global_urgs"]
+    if current_urgs:
+        df_master_filtrado = df_base_final[df_base_final["URG"].isin(current_urgs)]
+        if len(current_urgs) == 1:
+            st.info(f"📍 Filtrando por URG selecionada: **{current_urgs[0]}**")
+        else:
+            st.info(f"📍 Filtrando por conjunto de URGs: **{', '.join(current_urgs)}**")
+    else:
+        # Se vazio (Todos), mantém o df base (já filtrado por escola e ano)
+        df_master_filtrado = df_base_final.copy()
+
+    # --- Geração do filtro_titulo Dinâmico (Data-Driven UI) ---
+    def get_filter_display_string_for_title(selected_items_list, all_available_items_list):
+        if not selected_items_list or (all_available_items_list and set(map(str, selected_items_list)) == set(map(str, all_available_items_list))):
+            return "Todos"
+        return ", ".join(map(str, sorted(list(set(selected_items_list)))))
+
+    all_urgs_for_title = sorted(list(df["URG"].dropna().unique()))
+    all_years_for_title = sorted(list(df["Ano"].dropna().unique())) if "Ano" in df.columns else []
+    all_escolas_for_title = sorted(list(df["Escola"].dropna().unique()))
+    
+    # Se global_urgs for vazio, significa 'Todas'
+    current_urgs_for_title = st.session_state["global_urgs"] if st.session_state["global_urgs"] else all_urgs_for_title
+    current_escolas_for_title = selections.get("escola", [])
+    
+    anos_str = get_filter_display_string_for_title(selected_years_comp, all_years_for_title)
+    urgs_str = get_filter_display_string_for_title(current_urgs_for_title, all_urgs_for_title)
+    escolas_str = get_filter_display_string_for_title(current_escolas_for_title, all_escolas_for_title)
+    
+    filtro_titulo = f"Anos: {anos_str} / URGs: {urgs_str} / Escolas: {escolas_str}"
+
+    st.markdown(f"### Indicadores Gerais ({filtro_titulo})")
+
+    # --- Filtros aplicados Breadcrumb ---
     filters_placeholder.markdown(
         "**Filtros aplicados:** "
         + format_filters_applied(
@@ -215,124 +315,37 @@ def page_home():
         )
     )
 
-    anos_selecionados_validos = selections.get("ano", [])
 
-    urgs_selecionadas_validos = selections.get("urg", [])
+    # Preparamos o df para a Tabela de Performance (IMUNIDADE AO FILTRO DE UNIDADE)
+    # Ignora filtros de URG e Escola para que todas as linhas apareçam, reagindo APENAS ao Ano.
+    df_for_performance_table = df.copy()
+    if selected_years_comp:
+        df_for_performance_table = df_for_performance_table[df_for_performance_table["Ano"].isin(selected_years_comp)]
 
-    def get_filter_display_string_for_title(
-        selected_items_list, all_available_items_list_from_original_df
-    ):
-        if not selected_items_list or (
-            all_available_items_list_from_original_df
-            and set(map(str, selected_items_list))
-            == set(map(str, all_available_items_list_from_original_df))
-        ):
-            return "Todos"
-        return ", ".join(map(str, sorted(list(set(selected_items_list)))))
+    st.caption("Nota: Clique em qualquer linha de URG (na tabela de Performance por URG abaixo) para filtrar o restante do dashboard. Clique novamente para remover o filtro.")
 
-    processed_df_for_options = df.copy()
-    ano_col_for_options_title = "Ano"
-
-    if (
-        "Ano" not in processed_df_for_options.columns
-        or processed_df_for_options["Ano"].isnull().all()
-    ):
-        date_col_for_year_title = None
-
-        if (
-            "DtFechamento" in processed_df_for_options.columns
-            and pd.api.types.is_datetime64_any_dtype(
-                processed_df_for_options["DtFechamento"]
-            )
-        ):
-            date_col_for_year_title = "DtFechamento"
-
-        elif (
-            "Data" in processed_df_for_options.columns
-            and pd.api.types.is_datetime64_any_dtype(processed_df_for_options["Data"])
-        ):
-            date_col_for_year_title = "Data"
-
-        if date_col_for_year_title:
-            processed_df_for_options = (
-                processed_df_for_options.copy()
-            )  # Evitar SettingWithCopyWarning
-
-            processed_df_for_options["Ano_derived_title"] = processed_df_for_options[
-                date_col_for_year_title
-            ].dt.year
-
-            ano_col_for_options_title = "Ano_derived_title"
-
-    all_anos_in_df_for_title = []
-
-    if ano_col_for_options_title in processed_df_for_options.columns:
-        try:
-            year_series_title = pd.to_numeric(
-                processed_df_for_options[ano_col_for_options_title], errors="coerce"
-            )
-
-            all_anos_in_df_for_title = sorted(
-                list(year_series_title.dropna().astype(int).unique())
-            )
-
-        except Exception:
-            pass
-
-    all_urgs_in_df_for_title = []
-
-    if "URG" in df.columns:
-        try:
-            temp_series_urg_title = df["URG"].astype(str).str.strip().replace("", pd.NA)
-
-            all_urgs_in_df_for_title = sorted(
-                list(temp_series_urg_title.dropna().unique())
-            )
-
-        except Exception:
-            pass
-
-    anos_str = get_filter_display_string_for_title(
-        anos_selecionados_validos, all_anos_in_df_for_title
-    )
-
-    urgs_str = get_filter_display_string_for_title(
-        urgs_selecionadas_validos, all_urgs_in_df_for_title
-    )
-
-    filtro_titulo = f"Anos: {anos_str} / URGs: {urgs_str}"
-
-    # --- Exibição dos Dados e Gráficos ---
-
-    st.subheader("Indicadores Gerais")
-
-    if not df_filtrado.empty:
-        total_alunos_escola = df_filtrado["QtdAlunoEscola"].sum()
-
-        total_alunos = df_filtrado["QtdAluno"].sum()
-
-        total_professor = df_filtrado["QtdProfessor"].sum()
-        total_psicologo = df_filtrado["QtdPsicologo"].sum()
-        total_assist_social = df_filtrado["QtdAssistSocial"].sum()
-        total_enfermagem = df_filtrado["QtdEnfermagem"].sum()
-        total_medico = df_filtrado["QtdMedico"].sum()
-        total_atendimentos_profissionais = (
-            df_filtrado[
-                [
-                    "QtdProfessor",
-                    "QtdPsicologo",
-                    "QtdAssistSocial",
-                    "QtdEnfermagem",
-                    "QtdMedico",
-                ]
-            ]
-            .sum()
-            .sum()
-        )
-        total_vacinacao_alunos = df_filtrado["QtdVacinacao"].sum()
-        total_doses_vacina = df_filtrado["QtdVacina"].sum()
-        total_exames = df_filtrado["QtdExame"].sum()
-        total_encaminhamentos = df_filtrado["QtdEncaminhamento"].sum()
+    # --- PRIORIDADE 1 (TOPO): MÉTRICAS (Reagem ao Filtro Mestre de Anos e Toggles) ---
+    toggles = st.session_state["home_toggles"]
+    if not df_master_filtrado.empty:
+        total_alunos_escola = df_master_filtrado["QtdAlunoEscola"].sum() if toggles["TOTAL DE ALUNOS (ESCOLA)"] else 0
+        total_alunos = df_master_filtrado["QtdAluno"].sum() if toggles["ALUNOS ATENDIDOS"] else 0
+        
+        # Especialidades individuais (afetam o total profissional se ativos)
+        total_professor = df_master_filtrado["QtdProfessor"].sum() if toggles["ATEND. PROFESSOR"] else 0
+        total_psicologo = df_master_filtrado["QtdPsicologo"].sum() if toggles["ATEND. PSICÓLOGO"] else 0
+        total_assist_social = df_master_filtrado["QtdAssistSocial"].sum() if toggles["ATEND. ASSIST. SOCIAL"] else 0
+        total_enfermagem = df_master_filtrado["QtdEnfermagem"].sum() if toggles["ATEND. ENFERMAGEM"] else 0
+        total_medico = df_master_filtrado["QtdMedico"].sum() if toggles["ATEND. MÉDICO"] else 0
+        
+        # Atendimentos Profissionais (Soma dos ativos)
+        total_atendimentos_profissionais = 0
+        if toggles["ATENDIMENTOS (PROFISSIONAIS)"]:
+            total_atendimentos_profissionais = (total_professor + total_psicologo + total_assist_social + total_enfermagem + total_medico)
+        
+        total_vacinacao_alunos = df_master_filtrado["QtdVacinacao"].sum() if toggles["ALUNOS VACINADOS"] else 0
+        total_doses_vacina = df_master_filtrado["QtdVacina"].sum() if toggles["DOSES DE VACINA APLICADAS"] else 0
+        total_exames = df_master_filtrado["QtdExame"].sum() if toggles["EXAMES"] else 0
+        total_encaminhamentos = df_master_filtrado["QtdEncaminhamento"].sum() if toggles["ENCAMINHAMENTOS"] else 0
     else:
         total_alunos_escola = 0
         total_alunos = 0
@@ -361,6 +374,15 @@ def page_home():
                 flex-direction: column;
                 gap: 6px;
                 height: 100%;
+                transition: all 0.3s ease;
+                cursor: pointer;
+            }
+
+            .home-metric-card-inactive {
+                background: #111827 !important;
+                border: 1px solid rgba(255,255,255,0.03) !important;
+                opacity: 0.4;
+                filter: grayscale(100%);
             }
 
             .home-metric-label {
@@ -375,42 +397,118 @@ def page_home():
                 color: #f8fafc;
                 line-height: 1.2;
             }
+
+            /* Estilo para tornar o botão do Streamlit um overlay invisível e perfeitamente alinhado */
+            [data-testid="column"] {
+                position: relative !important;
+            }
+            
+            /* Container do botão invisível */
+            [data-testid="stButton"] {
+                position: absolute !important;
+                inset: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+                z-index: 100 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            
+            /* O botão real dentro do container */
+            [data-testid="stButton"] button {
+                position: absolute !important;
+                inset: 0 !important;
+                width: 100% !important;
+                height: 100% !important;
+                background-color: transparent !important;
+                border: none !important;
+                color: transparent !important;
+                opacity: 0 !important;
+                cursor: pointer !important;
+                z-index: 101 !important;
+                pointer-events: auto !important;
+            }
+            
+            /* Garante que o card ocupe o espaço necessário e fique atrás do botão */
+            .home-metric-card {
+                position: relative;
+                z-index: 1;
+                width: 100%;
+                min-height: 100px;
+                pointer-events: none; /* Deixa o clique passar para o botão atrás/frente */
+            }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
     primary_metrics = [
-        ("Total de Alunos (Escola)", total_alunos_escola),
-        ("Alunos Atendidos", total_alunos),
-        ("Atendimentos (Profissionais)", total_atendimentos_profissionais),
+        ("TOTAL DE ALUNOS (ESCOLA)", total_alunos_escola),
+        ("ALUNOS ATENDIDOS", total_alunos),
+        ("ATENDIMENTOS (PROFISSIONAIS)", total_atendimentos_profissionais),
     ]
     professional_metrics = [
-        ("Atend. Professor", total_professor),
-        ("Atend. Psicólogo", total_psicologo),
-        ("Atend. Assist. Social", total_assist_social),
-        ("Atend. Enfermagem", total_enfermagem),
-        ("Atend. Médico", total_medico),
+        ("ATEND. PROFESSOR", total_professor),
+        ("ATEND. PSICÓLOGO", total_psicologo),
+        ("ATEND. ASSIST. SOCIAL", total_assist_social),
+        ("ATEND. ENFERMAGEM", total_enfermagem),
+        ("ATEND. MÉDICO", total_medico),
     ]
     service_metrics = [
-        ("Encaminhamentos", total_encaminhamentos),
-        ("Exames", total_exames),
-        ("Doses de Vacina Aplicadas", total_doses_vacina),
-        ("Alunos Vacinados", total_vacinacao_alunos),
+        ("ENCAMINHAMENTOS", total_encaminhamentos),
+        ("EXAMES", total_exames),
+        ("DOSES DE VACINA APLICADAS", total_doses_vacina),
+        ("ALUNOS VACINADOS", total_vacinacao_alunos),
     ]
 
     def render_metric_row(metrics):
         cols = st.columns(len(metrics))
+        
+        # Mapeamento de labels para nomes de menu (conforme definido no option_menu do app.py)
+        label_to_menu = {
+            "ENCAMINHAMENTOS": "Encaminhamentos",
+            "EXAMES": "Exames",
+            "DOSES DE VACINA APLICADAS": "Vacinação",
+            "ALUNOS VACINADOS": "Vacinação",
+            "ATEND. MÉDICO": "Médico",
+        }
+        
+        icon_svg = (
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+            'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-left: 4px;">'
+            '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>'
+            '<polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>'
+        )
+
         for col, (label, value) in zip(cols, metrics):
+            is_active = toggles.get(label, True)
             value_fmt = f"{value:,}".replace(",", ".")
-            card_html = (
-                f'<div class="home-metric-card">'
-                f'<div class="home-metric-label">{label}</div>'
-                f'<div class="home-metric-value">{value_fmt}</div>'
-                "</div>"
-            )
+            card_class = "home-metric-card" if is_active else "home-metric-card home-metric-card-inactive"
+            
+            # Verifica se existe uma página de destino para este rótulo
+            menu_target = label_to_menu.get(label)
+            label_display = label
+            if menu_target:
+                # Cria o link HTML. pointer-events: auto e z-index elevado permitem o clique sobre o overlay do botão.
+                link_html = (
+                    f'<a href="/?menu={menu_target}" target="_self" '
+                    f'style="color: inherit; text-decoration: none; pointer-events: auto; position: relative; z-index: 200;" '
+                    f'title="Ver detalhes de {menu_target}">'
+                    f'{label}{icon_svg}</a>'
+                )
+                label_display = link_html
+
             with col:
-                st.markdown(card_html, unsafe_allow_html=True)
+                # Botão de overlay para o toggle
+                st.button(f"Toggle {label}", key=f"toggle_btn_{label}", on_click=toggle_indicator, args=(label,))
+                
+                st.markdown(
+                    f'<div class="{card_class}">'
+                    f'<div class="home-metric-label">{label_display}</div>'
+                    f'<div class="home-metric-value">{value_fmt}</div>'
+                    "</div>", 
+                    unsafe_allow_html=True
+                )
 
     render_metric_row(primary_metrics)
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
@@ -419,7 +517,68 @@ def page_home():
     render_metric_row(service_metrics)
     st.markdown("---")
 
-    st.subheader("Comparativo Anual Geral")
+    # --- NOVO: Tabela Comparativa de Performance por URG (Cross-Filtering) ---
+    st.subheader(f"Tabela Comparativa de Performance por URG (Anos: {anos_str})")
+    
+    # Callback local para sincronizar a seleção da tabela com o estado global (mesmo padrão de anos)
+    def sync_urg_table_to_global():
+        if "urg_table_selection_home" in st.session_state:
+            selection = st.session_state["urg_table_selection_home"]
+            rows = selection.get("selection", {}).get("rows", [])
+            df_table = st.session_state.get("last_df_cmp_urg_home")
+            
+            if df_table is not None:
+                selected_urgs = []
+                for r in rows:
+                    try:
+                        urg_val = df_table.data.iloc[r][("URG", "")]
+                        if urg_val and urg_val != "TOTAL":
+                            selected_urgs.append(urg_val)
+                    except: continue
+                
+                st.session_state["global_urgs"] = selected_urgs
+                st.session_state["sidebar_urg_filter"] = selected_urgs
+                st.session_state["last_interaction_source"] = "table"
+
+    # Utiliza a função padronizada build_comparativo_anual
+    current_selected_urgs = st.session_state.get("global_urgs", [])
+    df_cmp_urg_home = build_comparativo_anual(df_for_performance_table, "URG", value_col="QtdAluno", active_row_value=current_selected_urgs)
+    
+    # Salva o dataframe para ser usado pelo callback no próximo clique
+    st.session_state["last_df_cmp_urg_home"] = df_cmp_urg_home
+    
+    # --- Sincronização de Checkboxes (Paridade Sidebar -> Tabela) ---
+    if df_cmp_urg_home is not None:
+        # Encontra os índices das URGs selecionadas no DataFrame da tabela
+        # A coluna de URG está no nível ('URG', '') do MultiIndex
+        try:
+            urg_col_values = df_cmp_urg_home.data[("URG", "")].tolist()
+            target_indices = [i for i, val in enumerate(urg_col_values) if val in current_selected_urgs]
+            
+            # Atualiza o estado da seleção se houver divergência (evita loops desnecessários)
+            current_table_selection = st.session_state.get("urg_table_selection_home", {}).get("selection", {}).get("rows", [])
+            if set(target_indices) != set(current_table_selection):
+                st.session_state["urg_table_selection_home"] = {"selection": {"rows": target_indices, "columns": []}}
+        except Exception:
+            pass
+
+        st.dataframe(
+            style_urg_performance_table(df_cmp_urg_home, current_selected_urgs),
+            use_container_width=True,
+            hide_index=True,
+            on_select=sync_urg_table_to_global, # <-- Agora usa callback como os Anos
+            selection_mode="multi-row",
+            key="urg_table_selection_home"
+        )
+    else:
+        st.info("Dados insuficientes para gerar a tabela comparativa de URGs.")
+
+    st.markdown("---")
+
+
+
+    st.subheader(f"Comparativo Anual Geral ({filtro_titulo})")
+    st.caption("Nota: As colunas '% Total' representam o percentual sobre o total de atendimentos realizados no respectivo ano.")
 
     if df_home_ano.empty:
         st.info(
@@ -427,106 +586,171 @@ def page_home():
         )
 
     else:
-        df_home_ano_exibir = df_home_ano.copy()
+        # --- LÓGICA DE SELEÇÃO DA FONTE (Sincronização com Filtros) ---
+        is_urg_filtered = bool(st.session_state["global_urgs"])
+        selected_schools = selections.get("escola", [])
+        all_schools = list(df["Escola"].dropna().unique())
+        is_school_filtered = selected_schools and set(selected_schools) != set(all_schools)
 
-        year_cols = ["2022", "2023", "2024", "2025", "2026"]
+        if is_school_filtered and not df_escola_ano.empty:
+            df_source = df_escola_ano[df_escola_ano["Escola"].isin(selected_schools)].copy()
+            if is_urg_filtered:
+                df_source = df_source[df_source["URG"].isin(st.session_state["global_urgs"])]
+            numeric_cols = [c for c in ["2022", "2023", "2024", "2025", "2026", "Total"] if c in df_source.columns]
+            df_home_ano_exibir = df_source.groupby("Descricao")[numeric_cols].sum().reset_index()
+        elif is_urg_filtered and not df_urg_ano.empty:
+            df_source = df_urg_ano[df_urg_ano["URG"].isin(st.session_state["global_urgs"])].copy()
+            numeric_cols = [c for c in ["2022", "2023", "2024", "2025", "2026", "Total"] if c in df_source.columns]
+            df_home_ano_exibir = df_source.groupby("Descricao")[numeric_cols].sum().reset_index()
+        else:
+            df_home_ano_exibir = df_home_ano.copy()
 
-        numeric_cols = [
-            col for col in year_cols + ["Total"] if col in df_home_ano_exibir.columns
+        # --- LÓGICA DE FILTRAGEM REVERSA (TOGGLES) ---
+        def should_exclude(desc):
+            desc_upper = str(desc).upper()
+            if not toggles.get("TOTAL DE ALUNOS (ESCOLA)") and "CADASTRADOS" in desc_upper: return True
+            if not toggles.get("ALUNOS ATENDIDOS") and "ALUNOS ATENDIDOS" in desc_upper: return True
+            if not toggles.get("ATEND. PROFESSOR") and "PROFESSORES" in desc_upper: return True
+            if not toggles.get("ATEND. PSICÓLOGO") and "PSC" in desc_upper: return True
+            if not toggles.get("ATEND. ASSIST. SOCIAL") and "ASSIST" in desc_upper: return True
+            if not toggles.get("ATEND. ENFERMAGEM") and "ENFERMAGEM" in desc_upper: return True
+            if not toggles.get("ATEND. MÉDICO") and "DICA" in desc_upper: return True
+            if not toggles.get("ALUNOS VACINADOS") and "VACINADOS" in desc_upper: return True
+            if not toggles.get("DOSES DE VACINA APLICADAS") and "APLICADAS" in desc_upper: return True
+            if not toggles.get("ENCAMINHAMENTOS") and "ENCAMINHAMENTOS" in desc_upper: return True
+            if not toggles.get("EXAMES") and "EXAMES" in desc_upper: return True
+            return False
+        
+        df_home_ano_exibir = df_home_ano_exibir[~df_home_ano_exibir["Descricao"].apply(should_exclude)]
+
+        # Filtrar o comparativo pelos anos selecionados no seletor mestre
+        all_years_possible = ["2022", "2023", "2024", "2025", "2026"]
+        year_cols_selected = [str(y) for y in selected_years_comp]
+        year_cols_to_drop = [c for c in all_years_possible if c in df_home_ano_exibir.columns and c not in year_cols_selected]
+        
+        if year_cols_to_drop:
+            df_home_ano_exibir = df_home_ano_exibir.drop(columns=year_cols_to_drop)
+
+        year_cols_existentes = [c for c in year_cols_selected if c in df_home_ano_exibir.columns]
+        
+        numeric_cols_to_process = [
+            col for col in year_cols_existentes + ["Total"] if col in df_home_ano_exibir.columns
         ]
 
-        if numeric_cols:
-            df_home_ano_exibir[numeric_cols] = df_home_ano_exibir[numeric_cols].apply(
+        if numeric_cols_to_process:
+            df_home_ano_exibir[numeric_cols_to_process] = df_home_ano_exibir[numeric_cols_to_process].apply(
                 pd.to_numeric, errors="coerce"
             ).fillna(0)
 
-        # Recalcula o Total para incluir 2026
-        df_home_ano_exibir["Total"] = df_home_ano_exibir[year_cols].sum(axis=1)
+        # Recalcula o Total usando apenas colunas selecionadas
+        df_home_ano_exibir["Total"] = df_home_ano_exibir[year_cols_existentes].sum(axis=1) if year_cols_existentes else 0
 
-        for prev, curr in zip(year_cols, year_cols[1:]):
-            if (
-                prev in df_home_ano_exibir.columns
-                and curr in df_home_ano_exibir.columns
-            ):
-                # Usar nomes curtos e únicos para evitar duplicação de colunas
+        # Cálculos anuais: % Total para todos os anos
+        for year in year_cols_existentes:
+            total_ano = df_home_ano_exibir[year].sum()
+            pct_col = f"% Total {year[-2:]}"
+            df_home_ano_exibir[pct_col] = (df_home_ano_exibir[year] / total_ano * 100) if total_ano > 0 else 0
 
-                abs_col = f"Var {curr[-2:]}-{prev[-2:]}"
-
-                pct_col = f"Var% {curr[-2:]}-{prev[-2:]}"
-
-                df_home_ano_exibir[abs_col] = (
-                    df_home_ano_exibir[curr] - df_home_ano_exibir[prev]
-                )
-
-                df_home_ano_exibir[pct_col] = (
-                    df_home_ano_exibir[abs_col]
-                    / df_home_ano_exibir[prev].replace({0: np.nan})
-                    * 100
-                )
+        # Cálculos interanuais: Var% em relação ao ano anterior
+        for prev, curr in zip(year_cols_existentes, year_cols_existentes[1:]):
+            var_pct_col = f"Var% {curr[-2:]}-{prev[-2:]}"
+            diff = df_home_ano_exibir[curr] - df_home_ano_exibir[prev]
+            df_home_ano_exibir[var_pct_col] = (diff / df_home_ano_exibir[prev].replace(0, float("nan")) * 100)
 
         col_order = []
-
         if "URG" in df_home_ano_exibir.columns:
             col_order.append("URG")
 
         if "Descricao" in df_home_ano_exibir.columns:
             col_order.append("Descricao")
 
-        for prev, curr in zip(year_cols, year_cols[1:]):
-            if prev in df_home_ano_exibir.columns:
-                col_order.append(prev)
-
-            abs_col = f"Var {curr[-2:]}-{prev[-2:]}"
-
-            pct_col = f"Var% {curr[-2:]}-{prev[-2:]}"
-
-            if abs_col in df_home_ano_exibir.columns:
-                col_order.append(abs_col)
-
-            if pct_col in df_home_ano_exibir.columns:
-                col_order.append(pct_col)
-
-        if year_cols[-1] in df_home_ano_exibir.columns:
-            col_order.append(year_cols[-1])
+        for i, year in enumerate(year_cols_existentes):
+            col_order.append(year)
+            col_order.append(f"% Total {year[-2:]}")
+            if i > 0:
+                prev = year_cols_existentes[i - 1]
+                col_order.append(f"Var% {year[-2:]}-{prev[-2:]}")
 
         if "Total" in df_home_ano_exibir.columns:
             col_order.append("Total")
 
-        remaining_cols = [
-            col for col in df_home_ano_exibir.columns if col not in col_order
-        ]
+        df_home_ano_exibir = df_home_ano_exibir[col_order]
 
-        df_home_ano_exibir = df_home_ano_exibir[col_order + remaining_cols]
-
-        pct_cols = [c for c in df_home_ano_exibir.columns if c.startswith("Var% ")]
+        pct_cols = [c for c in df_home_ano_exibir.columns if c.startswith("% Total") or c.startswith("Var%")]
 
         # Cria uma versão apenas para exibição formatada (mantém df_home_ano_exibir numérico para o gráfico)
 
-        df_home_ano_display = df_home_ano_exibir.copy()
+        categoria_col_home = "Descricao" if "Descricao" in df_home_ano_exibir.columns else "URG" if "URG" in df_home_ano_exibir.columns else None
+        
+        if categoria_col_home:
+            total_row = {categoria_col_home: "TOTAL"}
+            for c in df_home_ano_exibir.columns:
+                if c in year_cols_existentes or c == "Total" or c.startswith("Var "):
+                    total_row[c] = df_home_ano_exibir[c].sum()
+                elif c.startswith("Var% ") or c.startswith("% Total"):
+                    total_row[c] = pd.NA
+            
+            df_home_ano_display = pd.concat([df_home_ano_exibir, pd.DataFrame([total_row])], ignore_index=True)
+        else:
+            df_home_ano_display = df_home_ano_exibir.copy()
 
         abs_cols = [
             c
             for c in df_home_ano_display.columns
-            if c in year_cols or c == "Total" or c.startswith("Var ")
+            if c in year_cols_existentes or c == "Total" or c.startswith("Var ")
         ]
 
         for c in abs_cols:
             df_home_ano_display[c] = df_home_ano_display[c].map(
-                lambda x: f"{x:,.0f}".replace(",", ".") if pd.notna(x) else ""
+                lambda x: f"{int(float(x)):,}".replace(",", ".") if pd.notna(x) and float(x) != 0 else ""
             )
 
         for c in pct_cols:
             df_home_ano_display[c] = df_home_ano_display[c].map(
-                lambda x: f"{x:,.1f}".replace(",", ".") if pd.notna(x) else ""
+                lambda x: f"{x:,.1f}%".replace(",", ".") if pd.notna(x) and float(x) != 0 else ""
             )
 
-        numeric_like_cols = [c for c in df_home_ano_display.columns if c not in ["Descricao", "URG"]]
+        # Conversão das colunas para MultiIndex (Super-Header por Ano)
+        new_cols_home = []
+        for c in df_home_ano_display.columns:
+            if c == categoria_col_home:
+                new_cols_home.append((categoria_col_home, ""))
+            elif c == "Total":
+                new_cols_home.append(("Total Geral", ""))
+            elif c in year_cols_existentes:
+                new_cols_home.append((c, "Qtd"))
+            elif str(c).startswith("% Total"):
+                y_str = str(c).split(" ")[-1]
+                new_cols_home.append((f"20{y_str}", c))
+            elif str(c).startswith("Var%"):
+                y_str = str(c).split(" ")[1].split("-")[0]
+                new_cols_home.append((f"20{y_str}", c.replace("-", "/")))
+            else:
+                new_cols_home.append(("", c))
+        df_home_ano_display.columns = pd.MultiIndex.from_tuples(new_cols_home)
+
+        numeric_like_cols = [c for c in df_home_ano_display.columns if c[0] != categoria_col_home]
 
         right_align_props = {"text-align": "right"}
 
+        def style_total_row_home(row):
+            if categoria_col_home and row[(categoria_col_home, "")] == "TOTAL":
+                style = "background-color: #2b3b4e; font-weight: bold; border-top: 2px solid #ffffff; color: #ffffff; border-bottom: 1px solid rgba(255, 255, 255, 0.1); border-left: 1px solid rgba(255, 255, 255, 0.1); border-right: 1px solid rgba(255, 255, 255, 0.1);"
+            else:
+                bg = "#1e2530" if row.name % 2 == 0 else "#161c26"
+                style = f"background-color: {bg}; border: 1px solid rgba(255, 255, 255, 0.1);"
+            return [style] * len(row)
+
+        hover_styles_home = [
+            {"selector": "thead th", "props": [("text-align", "center"), ("background-color", "#161c26")]},
+            {"selector": "thead tr:first-child th", "props": [("border-bottom", "2px solid rgba(255, 255, 255, 0.2)"), ("background-color", "#12171f")]},
+            {"selector": "tbody tr:hover td", "props": [("background-color", "#374151 !important")]},
+            {"selector": "tbody tr:hover th", "props": [("background-color", "#374151 !important")]},
+        ]
+
         styler_home = df_home_ano_display.style.set_properties(
             subset=numeric_like_cols, **right_align_props
-        ).hide(axis="index")
+        ).apply(style_total_row_home, axis=1).set_table_styles(hover_styles_home).hide(axis="index")
 
         st.dataframe(styler_home, use_container_width=True, hide_index=True)
 
@@ -539,61 +763,92 @@ def page_home():
             except Exception as exc:
                 st.error(f"Não foi possível copiar automaticamente: {exc}")
 
-        # Donut de cobertura (respeita filtros da sidebar)
-
-        cobertura_df = df_filtrado if not df_filtrado.empty else df
-
-        total_cadastrados = (
-            cobertura_df["QtdAlunoEscola"].sum()
-            if "QtdAlunoEscola" in cobertura_df
-            else 0
-        )
-
-        total_atendidos = (
-            cobertura_df["QtdAluno"].sum() if "QtdAluno" in cobertura_df else 0
-        )
-
-        if total_cadastrados and total_cadastrados > 0:
-            nao_atendidos = max(total_cadastrados - total_atendidos, 0)
-
-            pct_atendidos = (total_atendidos / total_cadastrados) * 100
-
-            df_pie = pd.DataFrame(
-                [
-                    {"Status": "Atendidos", "Qtd": total_atendidos},
-                    {"Status": "Não atendidos", "Qtd": nao_atendidos},
-                ]
-            )
-
-            fig_cov = px.pie(
-                df_pie,
-                names="Status",
-                values="Qtd",
-                hole=0.55,
-                title=f"Cobertura de alunos da escola (atendidos / cadastrados) - {pct_atendidos:.1f}%",
-                color="Status",
-                color_discrete_map={"Atendidos": "#16a34a", "Não atendidos": "#9ca3af"},
-            )
-
-            fig_cov.update_traces(
-                texttemplate="%{percent:.1%}\n(%{value:,.0f})", textposition="outside"
-            )
-
-            fig_cov.update_layout(
-                separators=",.",
-                showlegend=True,
-                title={
-                    "text": fig_cov.layout.title.text,
-                    "font": {"size": 22},
-                },  # mantém padrão de subtítulos
-            )
-
-            st.plotly_chart(fig_cov, use_container_width=True)
-
+        # --- Gráfico de Rosca: Cobertura de Alunos (Refatorado para múltiplos anos) ---
+        if not selected_years_comp:
+            st.info("Selecione um ou mais anos para visualizar a cobertura de alunos.")
         else:
-            st.info("Sem dados de cobertura para os filtros selecionados.")
+            st.subheader(f"Cobertura de alunos da escola (atendidos / cadastrados)")
+            
+            # Legenda Unificada (Manual) para manter a interface limpa
+            st.markdown(
+                """
+                <div style="display: flex; justify-content: center; gap: 24px; margin-bottom: 10px; font-size: 0.95rem;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 14px; height: 14px; background-color: #16a34a; border-radius: 3px;"></div>
+                        <span style="color: #e5e7eb;">Atendidos</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 14px; height: 14px; background-color: #9ca3af; border-radius: 3px;"></div>
+                        <span style="color: #e5e7eb;">Não atendidos</span>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
+            anos_ordenados = sorted(selected_years_comp)
+            # Define o número de colunas (máximo 3)
+            n_cols_grid = min(3, len(anos_ordenados))
+            
+            # Itera pelos anos em chunks para criar as linhas do grid
+            for i in range(0, len(anos_ordenados), n_cols_grid):
+                cols = st.columns(3) # Sempre cria 3 colunas para manter o tamanho do gráfico consistente
+                chunk = anos_ordenados[i : i + n_cols_grid]
+                
+                for idx, ano in enumerate(chunk):
+                    # Filtra dados específicos do ano
+                    df_ano = df_master_filtrado[df_master_filtrado["Ano"] == ano]
+                    
+                    total_cadastrados = df_ano["QtdAlunoEscola"].sum() if not df_ano.empty else 0
+                    total_atendidos = df_ano["QtdAluno"].sum() if not df_ano.empty else 0
+                    
+                    with cols[idx]:
+                        if total_cadastrados > 0:
+                            nao_atendidos = max(total_cadastrados - total_atendidos, 0)
+                            pct_atendidos = (total_atendidos / total_cadastrados) * 100
+                            
+                            df_pie = pd.DataFrame([
+                                {"Status": "Atendidos", "Qtd": total_atendidos},
+                                {"Status": "Não atendidos", "Qtd": nao_atendidos},
+                            ])
+                            
+                            fig_cov = px.pie(
+                                df_pie,
+                                names="Status",
+                                values="Qtd",
+                                hole=0.55,
+                                color="Status",
+                                color_discrete_map={"Atendidos": "#16a34a", "Não atendidos": "#9ca3af"},
+                            )
+                            
+                            fig_cov.update_traces(
+                                texttemplate="%{percent:.1%}<br>(%{value:,.0f})", 
+                                textposition="outside",
+                                hoverinfo="label+percent+value",
+                                marker=dict(line=dict(color='#0f172a', width=2))
+                            )
+                            
+                            fig_cov.update_layout(
+                                separators=",.",
+                                showlegend=False, # Legenda unificada acima
+                                margin=dict(t=60, b=20, l=10, r=10),
+                                height=350,
+                                paper_bgcolor="rgba(0,0,0,0)",
+                                plot_bgcolor="rgba(0,0,0,0)",
+                                title={
+                                    "text": f"<b>ANO {ano}</b><br><span style='font-size: 1.2rem; color: #16a34a;'>{pct_atendidos:.1f}% de Cobertura</span>",
+                                    "x": 0.5,
+                                    "xanchor": "center",
+                                    "y": 0.95,
+                                    "font": {"size": 16, "color": "#f8fafc"},
+                                },
+                            )
+                            
+                            st.plotly_chart(fig_cov, use_container_width=True, key=f"donut_cov_{ano}")
+                        else:
+                            st.info(f"Sem dados de cobertura para {ano}")
 
-        year_cols_present = [c for c in year_cols if c in df_home_ano_exibir.columns]
+        year_cols_present = [c for c in year_cols_existentes if c in df_home_ano_exibir.columns]
 
         if year_cols_present and "Descricao" in df_home_ano_exibir.columns:
             df_home_bar = df_home_ano_exibir[["Descricao"] + year_cols_present].copy()
@@ -619,6 +874,7 @@ def page_home():
                     title="Comparativo Anual Geral (Barras)",
                     labels={"Descricao": "Descrição", "Valor": "Quantidade"},
                 )
+                st.caption("Nota: As colunas '% Total' (na aba de Dados) representam o percentual sobre o total de atendimentos realizados no respectivo ano.")
 
                 fig_home_bar.update_layout(separators=",.", legend_title_text="Ano")
 
@@ -628,9 +884,12 @@ def page_home():
 
                 st.plotly_chart(fig_home_bar, use_container_width=True)
 
-    if df_filtrado.empty and (anos_str != "Todos" or urgs_str != "Todos"):
+
+
+
+    if df_master_filtrado.empty and (selected_years_comp or urgs_str != "Todos"):
         st.warning(
-            f"Não há dados disponíveis para a combinação de filtros selecionada (Anos: {anos_str}, URGs: {urgs_str})."
+            f"Não há dados disponíveis para a combinação de filtros selecionada (Anos: {selected_years_comp}, URGs: {urgs_str})."
         )
 
     elif df.empty:
@@ -640,30 +899,30 @@ def page_home():
 
     st.subheader("Distribuição de Atendimentos por Profissional")
 
-    if not df_filtrado.empty:
+    if not df_master_filtrado.empty:
         prof_atendimentos_sums = {
             "Professor": (
-                df_filtrado["QtdProfessor"].sum()
-                if "QtdProfessor" in df_filtrado
+                df_master_filtrado["QtdProfessor"].sum()
+                if "QtdProfessor" in df_master_filtrado
                 else 0
             ),
             "Psicólogo": (
-                df_filtrado["QtdPsicologo"].sum()
-                if "QtdPsicologo" in df_filtrado
+                df_master_filtrado["QtdPsicologo"].sum()
+                if "QtdPsicologo" in df_master_filtrado
                 else 0
             ),
             "Assist. Social": (
-                df_filtrado["QtdAssistSocial"].sum()
-                if "QtdAssistSocial" in df_filtrado
+                df_master_filtrado["QtdAssistSocial"].sum()
+                if "QtdAssistSocial" in df_master_filtrado
                 else 0
             ),
             "Enfermagem": (
-                df_filtrado["QtdEnfermagem"].sum()
-                if "QtdEnfermagem" in df_filtrado
+                df_master_filtrado["QtdEnfermagem"].sum()
+                if "QtdEnfermagem" in df_master_filtrado
                 else 0
             ),
             "Médico": (
-                df_filtrado["QtdMedico"].sum() if "QtdMedico" in df_filtrado else 0
+                df_master_filtrado["QtdMedico"].sum() if "QtdMedico" in df_master_filtrado else 0
             ),
         }
 
@@ -706,9 +965,9 @@ def page_home():
 
     # Gráfico: Total Anual de Alunos Atendidos por Profissional (Barras)
 
-    st.subheader("Total Anual de Alunos Atendidos por Profissional")
+    st.subheader(f"Total de Alunos Atendidos por Profissional e URG ({filtro_titulo})")
 
-    df_prof_base = df.copy()
+    df_prof_base = df_master_filtrado.copy()
 
     if not df_prof_base.empty and "Ano" in df_prof_base.columns:
         prof_cols = {
@@ -726,16 +985,19 @@ def page_home():
         }
 
         if actual_prof_cols:
-            grouped_by_year = df_prof_base.groupby("Ano")
+            # Agrupa por Ano e URG para permitir a visão regional
+            grouped_cols = ["Ano", "URG"]
+            grouped_by_year_urg = df_prof_base.groupby(grouped_cols)
 
-            for year, group_df in grouped_by_year:
+            for (year, urg), group_df in grouped_by_year_urg:
                 for col, name in actual_prof_cols.items():
                     total_atendidos_ano_profissional = group_df[col].sum()
 
                     if total_atendidos_ano_profissional > 0:
                         total_atendimentos_yearly_data.append(
                             {
-                                "Ano": int(year),
+                                "Ano": str(year),
+                                "URG": str(urg),
                                 "Profissional": name,
                                 "Total Alunos Atendidos": total_atendidos_ano_profissional,
                             }
@@ -744,28 +1006,36 @@ def page_home():
         if total_atendimentos_yearly_data:
             df_prof_total_yearly = pd.DataFrame(total_atendimentos_yearly_data)
 
-            df_prof_total_yearly["Ano"] = df_prof_total_yearly["Ano"].astype(int)
-
+            # Ordenação consistente
             df_prof_total_yearly = df_prof_total_yearly.sort_values(
-                by=["Profissional", "Ano"]
+                by=["Ano", "URG", "Profissional"]
             )
 
-            fig_prof_total_bar_yearly = px.bar(
-                df_prof_total_yearly,
-                x="Profissional",
-                y="Total Alunos Atendidos",
-                color=df_prof_total_yearly["Ano"].astype(str),
-                barmode="group",
-                title="Total Anual de Alunos Atendidos por Profissional",
-                text="Total Alunos Atendidos",
-            )
+            # Determina se usamos facetas para os anos (se houver mais de um)
+            n_years = df_prof_total_yearly["Ano"].nunique()
+            
+            fig_args = {
+                "data_frame": df_prof_total_yearly,
+                "x": "Profissional",
+                "y": "Total Alunos Atendidos",
+                "color": "URG",
+                "barmode": "group",
+                "title": "Total de Alunos Atendidos por Profissional e URG",
+                "text": "Total Alunos Atendidos",
+            }
+            
+            if n_years > 1:
+                fig_args["facet_col"] = "Ano"
+                fig_args["facet_col_wrap"] = 2
+
+            fig_prof_total_bar_yearly = px.bar(**fig_args)
 
             fig_prof_total_bar_yearly.update_layout(
                 xaxis={
                     "categoryorder": "array",
                     "categoryarray": list(actual_prof_cols.values()),
                 },
-                legend_title_text="Ano",
+                legend_title_text="URG",
                 separators=",.",
             )
 
@@ -785,9 +1055,9 @@ def page_home():
 
     # --- NOVO Gráfico: Total Anual por Tipo de Ação ---
 
-    st.subheader("Total Anual por Tipo de Ação")
+    st.subheader(f"Total por Tipo de Ação e URG ({filtro_titulo})")
 
-    df_action_base = df.copy()
+    df_action_base = df_master_filtrado.copy()
 
     if not df_action_base.empty and "Ano" in df_action_base.columns:
         action_cols_orig = [
@@ -802,19 +1072,20 @@ def page_home():
         ]
 
         if actual_action_cols_orig:
-            ano_action_group = (
-                df_action_base.groupby("Ano")[actual_action_cols_orig]
+            # Agrupa por Ano e URG
+            ano_urg_action_group = (
+                df_action_base.groupby(["Ano", "URG"])[actual_action_cols_orig]
                 .sum()
                 .reset_index()
             )
 
             mask_action_not_all_zero = (
-                ano_action_group[actual_action_cols_orig].ne(0).any(axis=1)
+                ano_urg_action_group[actual_action_cols_orig].ne(0).any(axis=1)
             )
 
-            ano_action_group = ano_action_group[mask_action_not_all_zero]
+            ano_urg_action_group = ano_urg_action_group[mask_action_not_all_zero]
 
-            if not ano_action_group.empty:
+            if not ano_urg_action_group.empty:
                 rename_map_action_ano = {
                     "QtdEncaminhamento": "Encaminhamento",
                     "QtdExame": "Exame",
@@ -825,50 +1096,59 @@ def page_home():
                 actual_rename_map_action_ano = {
                     k: v
                     for k, v in rename_map_action_ano.items()
-                    if k in ano_action_group.columns
+                    if k in ano_urg_action_group.columns
                 }
 
-                ano_action_group_display = ano_action_group.rename(
+                ano_urg_action_group_display = ano_urg_action_group.rename(
                     columns=actual_rename_map_action_ano
                 )
 
-                id_vars_melt = ["Ano"]
+                id_vars_melt = ["Ano", "URG"]
 
                 value_vars_melt = [
                     v
                     for k, v in actual_rename_map_action_ano.items()
-                    if v in ano_action_group_display.columns
+                    if v in ano_urg_action_group_display.columns
                 ]
 
                 if value_vars_melt:
-                    ano_action_group_melted = pd.melt(
-                        ano_action_group_display,
+                    ano_urg_action_group_melted = pd.melt(
+                        ano_urg_action_group_display,
                         id_vars=id_vars_melt,
                         value_vars=value_vars_melt,
                         var_name="Ação",
                         value_name="Quantidade",
                     )
 
-                    ano_action_group_melted["Ano"] = ano_action_group_melted[
+                    ano_urg_action_group_melted["Ano"] = ano_urg_action_group_melted[
                         "Ano"
                     ].astype(str)
 
-                    ano_action_group_melted = ano_action_group_melted.sort_values(
-                        by="Ano"
+                    ano_urg_action_group_melted = ano_urg_action_group_melted.sort_values(
+                        by=["Ano", "URG"]
                     )
 
-                    fig_ano_action = px.bar(
-                        ano_action_group_melted,
-                        x="Ano",
-                        y="Quantidade",
-                        color="Ação",
-                        barmode="group",
-                        title="Total Anual por Tipo de Ação",
-                        text="Quantidade",
-                    )
+                    n_years = ano_urg_action_group_melted["Ano"].nunique()
+                    
+                    fig_args = {
+                        "data_frame": ano_urg_action_group_melted,
+                        "x": "Ação",
+                        "y": "Quantidade",
+                        "color": "URG",
+                        "barmode": "group",
+                        "title": "Total por Tipo de Ação e URG",
+                        "text": "Quantidade",
+                    }
+                    
+                    if n_years > 1:
+                        fig_args["facet_col"] = "Ano"
+                        fig_args["facet_col_wrap"] = 2
+
+                    fig_ano_action = px.bar(**fig_args)
 
                     fig_ano_action.update_layout(
-                        separators=",.", xaxis={"type": "category"}
+                        separators=",.", 
+                        legend_title_text="URG"
                     )
 
                     fig_ano_action.update_traces(
@@ -891,131 +1171,11 @@ def page_home():
     elif not df.empty:
         st.info("Não há dados de ações para exibir.")
 
-    st.markdown("---")
-
-    st.subheader("Comparativo Anual por URG")
-
-    if df_urg_ano.empty:
-        st.info(
-            "Dados agregados por URG/ano não estão disponíveis ou houve erro na leitura do CSV."
-        )
-
-    else:
-        df_urg_exibir = df_urg_ano.copy()
-
-        urgs_aplicadas_home = selections.get("urg", [])
-
-        if urgs_aplicadas_home and "URG" in df_urg_exibir.columns:
-            df_urg_exibir = df_urg_exibir[
-                df_urg_exibir["URG"].isin(urgs_aplicadas_home)
-            ]
-
-        year_cols = ["2022", "2023", "2024", "2025", "2026"]
-
-        numeric_cols = [
-            col for col in year_cols + ["Total"] if col in df_urg_exibir.columns
-        ]
-
-        if numeric_cols:
-            df_urg_exibir[numeric_cols] = df_urg_exibir[numeric_cols].apply(
-                pd.to_numeric, errors="coerce"
-            ).fillna(0)
-
-        # Recalcula o Total para incluir 2026
-        df_urg_exibir["Total"] = df_urg_exibir[year_cols].sum(axis=1)
-
-        for prev, curr in zip(year_cols, year_cols[1:]):
-            if prev in df_urg_exibir.columns and curr in df_urg_exibir.columns:
-                abs_col = f"Var {curr[-2:]}-{prev[-2:]}"
-
-                pct_col = f"Var% {curr[-2:]}-{prev[-2:]}"
-
-                df_urg_exibir[abs_col] = df_urg_exibir[curr] - df_urg_exibir[prev]
-
-                df_urg_exibir[pct_col] = (
-                    df_urg_exibir[abs_col]
-                    / df_urg_exibir[prev].replace({0: np.nan})
-                    * 100
-                )
-
-        col_order_urg = []
-
-        if "URG" in df_urg_exibir.columns:
-            col_order_urg.append("URG")
-
-        if "Descricao" in df_urg_exibir.columns:
-            col_order_urg.append("Descricao")
-
-        for prev, curr in zip(year_cols, year_cols[1:]):
-            if prev in df_urg_exibir.columns:
-                col_order_urg.append(prev)
-
-            abs_col = f"Var {curr[-2:]}-{prev[-2:]}"
-
-            pct_col = f"Var% {curr[-2:]}-{prev[-2:]}"
-
-            if abs_col in df_urg_exibir.columns:
-                col_order_urg.append(abs_col)
-
-            if pct_col in df_urg_exibir.columns:
-                col_order_urg.append(pct_col)
-
-        if year_cols[-1] in df_urg_exibir.columns:
-            col_order_urg.append(year_cols[-1])
-
-        if "Total" in df_urg_exibir.columns:
-            col_order_urg.append("Total")
-
-        remaining_cols_urg = [
-            col for col in df_urg_exibir.columns if col not in col_order_urg
-        ]
-
-        df_urg_exibir = df_urg_exibir[col_order_urg + remaining_cols_urg]
-
-        pct_cols_urg = [c for c in df_urg_exibir.columns if c.startswith("Var% ")]
-
-        df_urg_display = df_urg_exibir.copy()
-
-        abs_cols_urg = [
-            c
-            for c in df_urg_display.columns
-            if c in year_cols or c == "Total" or c.startswith("Var ")
-        ]
-
-        for c in abs_cols_urg:
-            df_urg_display[c] = df_urg_display[c].map(
-                lambda x: f"{x:,.0f}".replace(",", ".") if pd.notna(x) else ""
-            )
-
-        for c in pct_cols_urg:
-            df_urg_display[c] = df_urg_display[c].map(
-                lambda x: f"{x:,.1f}".replace(",", ".") if pd.notna(x) else ""
-            )
-
-        numeric_like_cols_urg = [
-            c for c in df_urg_display.columns if c not in ["Descricao", "URG"]
-        ]
-
-        styler_urg = df_urg_display.style.set_properties(
-            subset=numeric_like_cols_urg, **{"text-align": "right"}
-        ).hide(axis="index")
-
-        st.dataframe(styler_urg, use_container_width=True, hide_index=True)
-
-        if st.button("Copiar tabela (Comparativo URG)", key="copy_home_urg_table"):
-            try:
-                df_urg_exibir.to_clipboard(index=False, excel=True)
-
-                st.success("Tabela copiada. Cole no Excel com Ctrl+V.")
-
-            except Exception as exc:
-                st.error(f"Não foi possível copiar automaticamente: {exc}")
-
     # Gráfico: Distribuição de Atendimentos por Profissional por URG
 
-    st.subheader("Distribuição de Atendimentos por Profissional por URG")
+    st.subheader(f"Distribuição de Atendimentos por Profissional por URG ({filtro_titulo})")
 
-    if not df_filtrado.empty:
+    if not df_master_filtrado.empty:
         prof_cols_orig = [
             "QtdProfessor",
             "QtdPsicologo",
@@ -1024,7 +1184,7 @@ def page_home():
             "QtdMedico",
         ]
 
-        urg_prof_group = df_filtrado.groupby("URG")[prof_cols_orig].sum().reset_index()
+        urg_prof_group = df_master_filtrado.groupby("URG")[prof_cols_orig].sum().reset_index()
 
         mask_prof_not_all_zero = urg_prof_group[prof_cols_orig].ne(0).any(axis=1)
 
@@ -1065,65 +1225,6 @@ def page_home():
                 f"Não há dados de atendimentos por profissionais para exibir para as URGs selecionadas ({urgs_str}) nos anos ({anos_str})."
             )
 
-    elif not df.empty:
-        st.info(
-            f"Não há dados de profissionais por URG para exibir para a combinação de filtros selecionada (Anos: {anos_str}, URGs: {urgs_str})."
-        )
-
-    # Gráfico: Distribuição de Ações por URG
-
-    st.subheader("Distribuição de Ações por URG")
-
-    if not df_filtrado.empty:
-        urg_group = (
-            df_filtrado.groupby("URG")[
-                ["QtdEncaminhamento", "QtdExame", "QtdVacinacao", "QtdVacina"]
-            ]
-            .sum()
-            .reset_index()
-        )
-
-        urg_group = urg_group[
-            (urg_group["QtdEncaminhamento"] != 0)
-            | (urg_group["QtdExame"] != 0)
-            | (urg_group["QtdVacinacao"] != 0)
-            | (urg_group["QtdVacina"] != 0)
-        ]
-
-        if not urg_group.empty:
-            urg_group_display = urg_group.rename(
-                columns={
-                    "QtdEncaminhamento": "Encaminhamento",
-                    "QtdExame": "Exame",
-                    "QtdVacinacao": "Alunos Vacinados",
-                    "QtdVacina": "Doses Vacina",
-                }
-            )
-
-            fig_urg = px.bar(
-                urg_group_display,
-                x="URG",
-                y=["Encaminhamento", "Exame", "Alunos Vacinados", "Doses Vacina"],
-                barmode="group",
-                title=f"Ações por URG ({filtro_titulo})",
-                labels={"value": "Quantidade", "variable": "Ação"},
-            )
-
-            fig_urg.update_layout(separators=",.")
-
-            fig_urg.update_traces(texttemplate="%{value:,.0f}", textposition="outside")
-
-            st.plotly_chart(fig_urg, use_container_width=True)
-
-        else:
-            st.info(
-                f"Não há dados de ações para exibir para as URGs selecionadas ({urgs_str}) nos anos ({anos_str})."
-            )
-
-    elif not df.empty:
-        st.info(
-            f"Não há dados de URG para exibir para a combinação de filtros selecionada (Anos: {anos_str}, URGs: {urgs_str})."
-        )
 
     # Detalhamento dos Dados
 
@@ -1137,8 +1238,8 @@ def page_home():
 
     df_for_export = pd.DataFrame()
 
-    if not df_filtrado.empty:
-        df_for_school_filter = df_filtrado.copy()
+    if not df_master_filtrado.empty:
+        df_for_school_filter = df_master_filtrado.copy()
 
         if "selected_schools_detalhamento" not in st.session_state:
             st.session_state.selected_schools_detalhamento = []
@@ -1301,13 +1402,13 @@ def page_home():
                 and "Ano" in df_filtrado.columns
                 and "QtdAlunoEscola" in df_filtrado.columns
             ):
-                df_filtrado_for_sum = df_filtrado.copy()
+                df_filtrado_for_sum = df_master_filtrado.copy()
 
                 df_filtrado_for_sum.loc[:, "QtdAlunoEscola"] = pd.to_numeric(
                     df_filtrado_for_sum["QtdAlunoEscola"], errors="coerce"
                 ).fillna(0)
 
-                total_aluno_sum_per_ano_from_sidebar = df_filtrado_for_sum.groupby(
+                total_aluno_sum_per_ano_from_sidebar = df_master_filtrado.groupby(
                     "Ano"
                 )["QtdAlunoEscola"].sum()
 
@@ -1759,26 +1860,19 @@ def page_home():
 
                 for col_name_pct in percentage_column_names_in_display:
                     if col_name_pct in target_total_df.columns:
-                        if not pd.api.types.is_object_dtype(
-                            target_total_df[col_name_pct].dtype
-                        ):
-                            target_total_df.loc[:, col_name_pct] = target_total_df[
-                                col_name_pct
-                            ].astype("object")
-
-                        if pd.isna(
-                            target_total_df.at[target_total_df.index[-1], col_name_pct]
-                        ):
-                            target_total_df.at[
-                                target_total_df.index[-1], col_name_pct
-                            ] = ""
+                        # Garantir tipo object para permitir strings e números/NaNs
+                        target_total_df[col_name_pct] = target_total_df[col_name_pct].astype(object)
+                        
+                        # Limpar NaNs na linha de total
+                        if pd.isna(target_total_df.at[target_total_df.index[-1], col_name_pct]):
+                            target_total_df.at[target_total_df.index[-1], col_name_pct] = ""
 
             # End of 'if actual_cols_to_sum:'
 
         # Após adicionar a linha de total, converter 'Ano' para string para evitar problemas com Arrow
 
         if "Ano" in df_display.columns:
-            df_display.loc[:, "Ano"] = (
+            df_display["Ano"] = (
                 df_display["Ano"]
                 .astype(str)
                 .replace({"<NA>": "", "nan": "", "None": ""})
@@ -1786,7 +1880,7 @@ def page_home():
 
         if not df_total_row_for_display.empty:
             if "Ano" in df_total_row_for_display.columns:
-                df_total_row_for_display.loc[:, "Ano"] = (
+                df_total_row_for_display["Ano"] = (
                     df_total_row_for_display["Ano"]
                     .astype(str)
                     .replace({"<NA>": "", "nan": "", "None": ""})
@@ -1930,17 +2024,8 @@ def page_home():
             auto_size_js = JsCode(
                 """
                 function(params) {
-                    if (!params.columnApi) {
-                        return;
-                    }
-                    const allColumnIds = [];
-                    params.columnApi.getColumns().forEach(function(column) {
-                        if (column && column.getId) {
-                            allColumnIds.push(column.getId());
-                        }
-                    });
-                    if (allColumnIds.length > 0) {
-                        params.columnApi.autoSizeColumns(allColumnIds, false);
+                    if (params.api) {
+                        params.api.autoSizeAllColumns(false);
                     }
                 }
                 """
@@ -2061,7 +2146,7 @@ def page_home():
                 height=grid_height,
                 update_mode=GridUpdateMode.SELECTION_CHANGED,
                 allow_unsafe_jscode=True,
-                fit_columns_on_grid_load=False,
+                fit_columns_on_grid_load=True,
                 theme="streamlit",
             )
 
@@ -2170,139 +2255,6 @@ def page_home():
             )
 
             st.markdown(legend_html, unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    st.subheader("Comparativo Anual por Escola")
-
-    if df_escola_ano.empty:
-        st.info(
-            "Dados agregados por escola/ano não estão disponíveis ou houve erro na leitura do CSV."
-        )
-
-    else:
-        df_escola_exibir = df_escola_ano.copy()
-
-        urgs_aplicadas_home = selections.get("urg", [])
-
-        if urgs_aplicadas_home and "URG" in df_escola_exibir.columns:
-            df_escola_exibir = df_escola_exibir[
-                df_escola_exibir["URG"].isin(urgs_aplicadas_home)
-            ]
-        escolas_aplicadas_home = selections.get("escola", [])
-        if escolas_aplicadas_home and "Escola" in df_escola_exibir.columns:
-            df_escola_exibir = df_escola_exibir[
-                df_escola_exibir["Escola"].astype(str).isin(escolas_aplicadas_home)
-            ]
-        year_cols_escola = ["2022", "2023", "2024", "2025", "2026"]
-
-        numeric_cols_escola = [
-            c for c in year_cols_escola + ["Total"] if c in df_escola_exibir.columns
-        ]
-
-        if numeric_cols_escola:
-            df_escola_exibir[numeric_cols_escola] = df_escola_exibir[
-                numeric_cols_escola
-            ].apply(pd.to_numeric, errors="coerce").fillna(0)
-        
-        # Recalcula o Total para incluir 2026
-        df_escola_exibir["Total"] = df_escola_exibir[year_cols_escola].sum(axis=1)
-
-        for prev, curr in zip(year_cols_escola, year_cols_escola[1:]):
-            if prev in df_escola_exibir.columns and curr in df_escola_exibir.columns:
-                abs_col = f"Var {curr[-2:]}-{prev[-2:]}"
-
-                pct_col = f"Var% {curr[-2:]}-{prev[-2:]}"
-
-                df_escola_exibir[abs_col] = (
-                    df_escola_exibir[curr] - df_escola_exibir[prev]
-                )
-
-                df_escola_exibir[pct_col] = (
-                    df_escola_exibir[abs_col]
-                    / df_escola_exibir[prev].replace({0: np.nan})
-                    * 100
-                )
-
-        col_order_escola = []
-
-        if "URG" in df_escola_exibir.columns:
-            col_order_escola.append("URG")
-
-        if "Escola" in df_escola_exibir.columns:
-            col_order_escola.append("Escola")
-
-        if "Descricao" in df_escola_exibir.columns:
-            col_order_escola.append("Descricao")
-
-        for prev, curr in zip(year_cols_escola, year_cols_escola[1:]):
-            if prev in df_escola_exibir.columns:
-                col_order_escola.append(prev)
-
-            abs_col = f"Var {curr[-2:]}-{prev[-2:]}"
-
-            pct_col = f"Var% {curr[-2:]}-{prev[-2:]}"
-
-            if abs_col in df_escola_exibir.columns:
-                col_order_escola.append(abs_col)
-
-            if pct_col in df_escola_exibir.columns:
-                col_order_escola.append(pct_col)
-
-        if year_cols_escola[-1] in df_escola_exibir.columns:
-            col_order_escola.append(year_cols_escola[-1])
-
-        if "Total" in df_escola_exibir.columns:
-            col_order_escola.append("Total")
-
-        remaining_cols_escola = [
-            c for c in df_escola_exibir.columns if c not in col_order_escola
-        ]
-
-        df_escola_exibir = df_escola_exibir[col_order_escola + remaining_cols_escola]
-
-        pct_cols_escola = [c for c in df_escola_exibir.columns if c.startswith("Var% ")]
-
-        df_escola_display = df_escola_exibir.copy()
-
-        abs_cols_escola = [
-            c
-            for c in df_escola_display.columns
-            if c in year_cols_escola or c == "Total" or c.startswith("Var ")
-        ]
-
-        for c in abs_cols_escola:
-            df_escola_display[c] = df_escola_display[c].map(
-                lambda x: f"{x:,.0f}".replace(",", ".") if pd.notna(x) else ""
-            )
-
-        for c in pct_cols_escola:
-            df_escola_display[c] = df_escola_display[c].map(
-                lambda x: f"{x:,.1f}".replace(",", ".") if pd.notna(x) else ""
-            )
-
-        numeric_like_cols_escola = [
-            c
-            for c in df_escola_display.columns
-            if c not in ["Descricao", "URG", "Escola"]
-        ]
-
-        styler_escola = df_escola_display.style.set_properties(
-            subset=numeric_like_cols_escola, **{"text-align": "right"}
-        ).hide(axis="index")
-
-        st.dataframe(styler_escola, use_container_width=True, hide_index=True)
-
-        if st.button(
-            "Copiar tabela (Comparativo Escola)", key="copy_home_escola_table"
-        ):
-            try:
-                df_escola_exibir.to_clipboard(index=False, excel=True)
-
-                st.success("Tabela copiada. Cole no Excel com Ctrl+V.")
-
-            except Exception as exc:
-                st.error(f"Não foi possível copiar automaticamente: {exc}")
 
     footer_personal()
 

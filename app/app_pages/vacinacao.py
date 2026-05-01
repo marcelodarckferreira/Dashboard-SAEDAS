@@ -1,6 +1,7 @@
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import datetime
 from urllib.parse import urlencode
 
 from components.footer_personal import footer_personal
@@ -9,19 +10,24 @@ from app.utils.data_loader import load_csv
 from app.utils.page_helpers import (
     filter_by_sidebar_selections,
     build_comparativo_anual,
+    get_selected_comparativo_value,
     render_metric,
     render_top_por_urg,
     format_filters_applied,
+    render_grouped_bar_anual,
+    toggle_multiselect_value,
+    should_use_native_regulacao_button,
+    get_native_regulacao_button_type,
 )
+from app.utils.state_manager import init_global_state, sync_home_to_sidebar, sync_home_urg_to_sidebar
 from app.utils.schemas import (
     SCHEMA_VACINACAO,
     SCHEMA_VACINACAO_ALUNO,
     SCHEMA_VACINACAO_ANO,
 )
-from app.utils.styles import apply_global_css, render_metric_cards
+from app.utils.styles import apply_global_css, render_metric_cards, style_urg_performance_table
 
 
-@st.cache_data(ttl=3600, show_spinner="Carregando dados de vacinação...")
 def carregar_dados_vacinacao():
     csv_file = "data/DashboardVacinacao.csv"
     df, info = load_csv(csv_file, expected_cols=SCHEMA_VACINACAO)
@@ -42,13 +48,150 @@ def carregar_dados_vacinacao():
 
 
 def page_vacinacao():
+    # Inicializa o estado global sincronizado (Anos e URGs)
+    init_global_state()
+
+    # --- LÓGICA DE TOGGLE PARA VACINAÇÃO ---
+    def toggle_vacinacao(vac_name):
+        current = st.session_state.get("vacinacao_vacina_multiselect", [])
+        st.session_state["vacinacao_vacina_multiselect"] = (
+            toggle_multiselect_value(current, vac_name)
+        )
+
+    st.markdown(
+        """
+        <style>
+            .consulta-metric-card {
+                background: linear-gradient(135deg, #0f172a, #1f2937);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 12px;
+                padding: 12px 14px;
+                box-shadow: 0 4px 18px rgba(0,0,0,0.18);
+                color: #e5e7eb;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+                height: 100%;
+                transition: all 0.3s ease;
+                position: relative;
+                z-index: 1;
+                pointer-events: none !important;
+            }
+
+            .consulta-metric-label {
+                font-size: 0.8rem;
+                letter-spacing: 0.02em;
+                color: #cbd5e1;
+            }
+
+            .consulta-metric-value {
+                font-size: 1.6rem;
+                font-weight: 700;
+                color: #f8fafc;
+                line-height: 1.2;
+            }
+
+            /* =========================================================
+               Streamlit Native Button as KPI Card
+               ========================================================= */
+
+            [data-testid="stButton"] button[kind="primary"],
+            [data-testid="stButton"] button[kind="tertiary"] {
+                width: 100% !important;
+                height: 101px !important;
+                min-height: 101px !important;
+                border-radius: 13px !important;
+                padding: 0 !important;
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: flex-start !important;
+                justify-content: center !important;
+                gap: 10px !important;
+                text-align: left !important;
+                line-height: 1 !important;
+                overflow: hidden !important;
+                color: #f8fafc !important;
+                background: #172238 !important;
+                box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22) !important;
+                transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease !important;
+            }
+
+            [data-testid="stButton"] button[kind="primary"]:focus,
+            [data-testid="stButton"] button[kind="tertiary"]:focus,
+            [data-testid="stButton"] button[kind="primary"]:focus-visible,
+            [data-testid="stButton"] button[kind="tertiary"]:focus-visible {
+                outline: none !important;
+            }
+
+            [data-testid="stButton"] button[kind="primary"] *,
+            [data-testid="stButton"] button[kind="tertiary"] * {
+                text-align: left !important;
+                align-self: flex-start !important;
+            }
+
+            [data-testid="stButton"] button[kind="primary"] p,
+            [data-testid="stButton"] button[kind="tertiary"] p {
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                color: #dbeafe !important;
+                font-size: 0.78rem !important;
+                font-weight: 600 !important;
+                letter-spacing: 0.055em !important;
+                line-height: 1.05 !important;
+                text-transform: uppercase !important;
+                pointer-events: none !important;
+            }
+
+            [data-testid="stButton"] button[kind="primary"] strong,
+            [data-testid="stButton"] button[kind="tertiary"] strong {
+                display: block !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                color: #ffffff !important;
+                font-size: 1.72rem !important;
+                font-weight: 800 !important;
+                line-height: 1 !important;
+                letter-spacing: -0.04em !important;
+                text-align: left !important;
+                pointer-events: none !important;
+            }
+
+            [data-testid="stButton"] button[kind="primary"] {
+                border: 1px solid #3b82f6 !important;
+                background: linear-gradient(135deg, #1e3a8a, #0f172a) !important;
+                box-shadow: 0 0 15px rgba(59, 130, 246, 0.4) !important;
+            }
+
+            [data-testid="stButton"] button[kind="tertiary"] {
+                border: 1px solid rgba(148, 163, 184, 0.16) !important;
+                background: #172238 !important;
+                box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22) !important;
+            }
+
+            [data-testid="stButton"] button[kind="primary"]:hover,
+            [data-testid="stButton"] button[kind="tertiary"]:hover {
+                transform: translateY(-1px) !important;
+                border-color: rgba(96, 165, 250, 0.55) !important;
+                background: #1a2942 !important;
+                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.26) !important;
+            }
+
+            [data-testid="stButton"] button[kind="primary"]:active,
+            [data-testid="stButton"] button[kind="tertiary"]:active {
+                transform: translateY(0) !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.title("Visão Geral da Vacinação")
     st.markdown(
         "Resumo consolidado das ações realizadas por ano, URG e equipe técnica."
     )
     filters_placeholder = st.empty()
-    st.markdown("---")
-
     apply_global_css()
     datasets = carregar_dados_vacinacao()
 
@@ -109,26 +252,118 @@ def page_vacinacao():
         {"ano": True, "urg": True, "escola": True, "tipo": True},
     )
 
+    # --- SELETOR TEMPORAL MESTRE (INDICADORES E PÁGINA) ---
+    current_year = datetime.datetime.now().year
+    years_options = sorted([current_year - i for i in range(5)], reverse=True)
+    
+    st.segmented_control(
+        label="Ano(s) de Referência:",
+        options=years_options,
+        selection_mode="multi",
+        key="home_year_buttons",
+        on_change=sync_home_to_sidebar,
+        label_visibility="collapsed"
+    )
+    # Sincroniza a variável local com o estado global
+    selected_years_comp = st.session_state["global_years"]
+
+    # --- Aplicação Final dos Filtros (Fontes de Verdade Globais) ---
+    df_base_final = df.copy()
+    
+    # 1. Filtro de Escola (Cascata da Sidebar)
+    if selections.get("escola"):
+        all_schools = set(df["Escola"].dropna().unique())
+        selected_schools = set(selections["escola"])
+        if selected_schools != all_schools:
+            df_base_final = df_base_final[df_base_final["Escola"].isin(selections["escola"])]
+            
+    # 2. Filtro de Tipo (Instituição)
+    if selections.get("tipo"):
+        all_types = set(df["Tipo"].dropna().unique())
+        selected_types = set(selections["tipo"])
+        if selected_types != all_types:
+            df_base_final = df_base_final[df_base_final["Tipo"].isin(selections["tipo"])]
+
+    # 3. Filtro de Anos (Global)
+    if selected_years_comp:
+        df_base_final = df_base_final[df_base_final["Ano"].isin(selected_years_comp)]
+    else:
+        df_base_final = pd.DataFrame()
+        
+    # 3. Filtro de URGs (Global - Vinculação Bidirecional)
+    current_urgs = st.session_state["global_urgs"]
+    # --- NOVO: Manter base sem filtro de vacina para a tabela comparativa (Show context + Highlight) ---
+    if current_urgs:
+        df_master_no_vac = df_base_final[df_base_final["URG"].isin(current_urgs)]
+    else:
+        df_master_no_vac = df_base_final.copy()
+
+    # 4. Filtro de URGs (Aplicação Final para o restante do dashboard)
+    if current_urgs:
+        df_master_filtrado = df_base_final[df_base_final["URG"].isin(current_urgs)]
+    else:
+        df_master_filtrado = df_base_final.copy()
+
     vacina_col = "Vacina"
     vacinas_disponiveis = (
         sorted(df_filt_sidebar[vacina_col].dropna().unique())
         if vacina_col in df_filt_sidebar.columns
         else []
     )
+    
+    # Filtro de Vacina (Sincronizado entre Sidebar e Botões KPI)
     vacinas_selecionadas = st.sidebar.multiselect(
-        "Selecione o(s) Tipo(s) de Vacina:",
+        "Selecione a(s) Vacina(s):",
         options=vacinas_disponiveis,
         default=[],
         placeholder="Todas",
-        key="vacinacao_vacina_multiselect",
+        key="vacinacao_vacina_multiselect"
     )
 
-    df_filt = (
-        df_filt_sidebar[df_filt_sidebar[vacina_col].isin(vacinas_selecionadas)]
-        if vacinas_selecionadas and vacina_col in df_filt_sidebar.columns
-        else df_filt_sidebar
-    )
-    selections["vacina"] = vacinas_selecionadas or vacinas_disponiveis
+    # 4. Filtro de Vacina (Aplicação Final para o restante do dashboard)
+    if vacinas_selecionadas:
+        df_master_filtrado = df_master_no_vac[df_master_no_vac["Vacina"].isin(vacinas_selecionadas)]
+    else:
+        df_master_filtrado = df_master_no_vac.copy()
+
+    # Substitui df_filt pelo filtrado final
+    df_filt = df_master_filtrado.copy()
+    
+    # --- Definições para Gráficos 'Top por URG' ---
+    # 1. Sem filtro de escola (para mostrar Top Escolas)
+    df_filt_no_escola = df_base_final.copy()
+    if current_urgs:
+        df_filt_no_escola = df_filt_no_escola[df_filt_no_escola["URG"].isin(current_urgs)]
+    
+    # 2. Sem filtro de vacina (para mostrar Top Vacinas e Tabela Comparativa)
+    df_filt_no_vac = df_master_no_vac.copy()
+    
+    # --- LÓGICA DE SELEÇÃO NAS TABELAS TOP ---
+    # Escola
+    selected_escola_from_table = None
+    if "escola_table_selection_vacinacao" in st.session_state:
+        selection = st.session_state["escola_table_selection_vacinacao"]
+        rows = selection.get("selection", {}).get("rows", [])
+        if rows:
+            df_cmp_escola = build_comparativo_anual(df_filt_no_escola, "Escola")
+            if df_cmp_escola is not None:
+                selected_escola_from_table = get_selected_comparativo_value(
+                    df_cmp_escola, rows, "Escola"
+                )
+    
+    if selected_escola_from_table:
+        df_filt = df_filt[df_filt["Escola"] == selected_escola_from_table]
+        selections["escola"] = [selected_escola_from_table]
+
+    # Vacina removida da seleção por tabela (Filtro Global via Sidebar agora é o padrão)
+    selected_vacs_from_table = []
+
+    if vacinas_selecionadas:
+        df_filt = df_filt[df_filt["Vacina"].isin(vacinas_selecionadas)]
+        selections["vacina"] = vacinas_selecionadas
+
+    selections["vacina"] = list(set(selections.get("vacina", []) + vacinas_selecionadas)) or vacinas_disponiveis
+
     filters_placeholder.markdown(
         "**Filtros aplicados:** "
         + format_filters_applied(
@@ -143,7 +378,6 @@ def page_vacinacao():
             ],
         )
     )
-    urgs_aplicadas = selections.get("urg", [])
 
     st.sidebar.markdown("---")
     st.sidebar.subheader("Exportar dados")
@@ -155,93 +389,154 @@ def page_vacinacao():
         file_name="dados_filtrados_vacinacao.csv",
         mime="text/csv",
     )
-
-    st.subheader("Indicadores Gerais")
-    render_metric("Total de Aplicações de Vacinas", df_filt["Quantidade"].sum())
-    # Sumário por tipo de Vacina em linhas de 5 colunas, apenas com totais > 0
+    
+    # 1. Indicador principal (Total Geral)
+    total_qtd = df_filt["Quantidade"].sum() if not df_filt.empty else 0
+    render_metric("TOTAL DE APLICAÇÕES DE VACINAS", total_qtd)
+    st.markdown(" ")
+    
+    # Sumário por tipo de Vacina - IMUNIDADE AO FILTRO DE VACINA
     vacinas_sum = (
-        df_filt.groupby("Vacina")["Quantidade"].sum().sort_values(ascending=False)
-        if not df_filt.empty and "Vacina" in df_filt.columns
+        df_filt_no_vac.groupby("Vacina")["Quantidade"].sum().sort_values(ascending=False)
+        if not df_filt_no_vac.empty and "Vacina" in df_filt_no_vac.columns
         else pd.Series(dtype="float")
     )
     vacinas_sum = vacinas_sum[vacinas_sum > 0]
+    
     if not vacinas_sum.empty:
+        # Preparamos os itens de vacina (nome, valor, is_active)
         for start in range(0, len(vacinas_sum), 5):
             slice_vac = vacinas_sum.iloc[start : start + 5]
             cols = st.columns(5)
             for col, (nome, valor) in zip(cols, slice_vac.items()):
+                nome_str = str(nome)
+                # Verifica se está ativo no filtro da sidebar
+                is_active = nome_str in vacinas_selecionadas
+                valor_fmt = f"{int(valor):,}".replace(",", ".")
+
                 with col:
-                    render_metric_cards([(f"{nome}", valor)])
+                    if should_use_native_regulacao_button(nome_str):
+                        st.button(
+                            f"{nome_str.upper()}\n\n**{valor_fmt}**",
+                            key=f"btn_vac_{nome_str}",
+                            on_click=toggle_vacinacao,
+                            args=(nome_str,),
+                            help=f"Marcar/desmarcar {nome_str.upper()} no filtro de vacinação",
+                            type=get_native_regulacao_button_type(
+                                nome_str, vacinas_selecionadas
+                            ),
+                            use_container_width=True,
+                        )
+                        continue
+                    
+                    # Fallback
+                    card_class = "consulta-metric-card consulta-metric-card-active" if is_active else "consulta-metric-card"
+                    st.markdown(
+                        f'<div class="{card_class}">'
+                        f'<div class="consulta-metric-label">{nome_str.upper()}</div>'
+                        f'<div class="consulta-metric-value">{valor_fmt}</div>'
+                        "</div>",
+                        unsafe_allow_html=True
+                    )
+    else:
+        st.info("Selecione ao menos um ano para visualizar os indicadores.")
+    
     st.markdown("---")
 
-    st.subheader("Comparativo Anual Geral")
-    df_cmp_display = build_comparativo_anual(df_filt, "Vacina")
-    if df_cmp_display is None:
-        st.info(
-            "Nenhum dado disponível para o comparativo anual geral com os filtros atuais."
-        )
-    else:
-        st.dataframe(df_cmp_display, use_container_width=True, hide_index=True)
+    # --- PRIORIDADE 2 (MEIO): TABELA COMPARATIVA DE PERFORMANCE ---
+    st.subheader("Performance por URG")
+    st.caption("Nota: Clique em qualquer linha de URG para filtrar o restante do dashboard. Esta tabela é sensível apenas ao filtro de Ano.")
 
-    st.subheader("Distribuição por Tipo de Vacina")
-    vacina_group = df_filt.groupby("Vacina")["Quantidade"].sum().reset_index()
-    if vacina_group.empty:
-        st.info("Nenhum dado de vacina para exibir.")
-    else:
-        vacina_group["% do Total"] = (
-            100 * vacina_group["Quantidade"] / vacina_group["Quantidade"].sum()
-        ).round(2).astype(str) + "%"
-        fig_vacina = px.bar(
-            vacina_group.sort_values("Quantidade", ascending=False),
-            x="Quantidade",
-            y="Vacina",
-            orientation="h",
-            text="% do Total",
-            color="Vacina",
-        )
-        fig_vacina.update_traces(textposition="auto")
-        st.plotly_chart(fig_vacina, use_container_width=True)
+    # Callback para sincronizar seleção da tabela com o estado global
+    def sync_urg_table_to_global_vacinacao():
+        if "urg_table_selection_vacinacao" in st.session_state:
+            selection = st.session_state["urg_table_selection_vacinacao"]
+            rows = selection.get("selection", {}).get("rows", [])
+            df_table = st.session_state.get("last_df_cmp_urg_vacinacao")
+            
+            if df_table is not None:
+                selected_urgs = []
+                for r in rows:
+                    try:
+                        urg_val = df_table.data.iloc[r][("URG", "")]
+                        if urg_val and urg_val != "TOTAL":
+                            selected_urgs.append(urg_val)
+                    except: continue
+                
+                st.session_state["global_urgs"] = selected_urgs
+                st.session_state["sidebar_urg_filter"] = selected_urgs
+                st.session_state["last_interaction_source"] = "table"
+
+    # Prepara DF para a tabela (Ignora filtros de URG, Escola e Vacina - Sensível APENAS ao Ano)
+    df_for_urg_table = df.copy()
+    if selected_years_comp:
+        df_for_urg_table = df_for_urg_table[df_for_urg_table["Ano"].isin(selected_years_comp)]
+    
+    # Nota: Não aplicamos filtro de Escola ou Vacina aqui para garantir que todas as URGs apareçam na lista,
+    # permitindo que a tabela funcione como um controlador mestre de navegação.
+
+    current_selected_urgs = st.session_state.get("global_urgs", [])
+    df_cmp_urg = build_comparativo_anual(df_for_urg_table, "URG", active_row_value=current_selected_urgs)
+    
+    # Salva o dataframe para o callback
+    st.session_state["last_df_cmp_urg_vacinacao"] = df_cmp_urg
+
+    if df_cmp_urg is not None:
+        # Sincronização de Checkboxes (Paridade Sidebar -> Tabela)
+        try:
+            urg_col_values = df_cmp_urg.data[("URG", "")].tolist()
+            target_indices = [i for i, val in enumerate(urg_col_values) if val in current_selected_urgs]
+            
+            current_table_selection = st.session_state.get("urg_table_selection_vacinacao", {}).get("selection", {}).get("rows", [])
+            if set(target_indices) != set(current_table_selection):
+                st.session_state["urg_table_selection_vacinacao"] = {"selection": {"rows": target_indices, "columns": []}}
+        except Exception: pass
+
         st.dataframe(
-            vacina_group.sort_values("Quantidade", ascending=False),
+            style_urg_performance_table(df_cmp_urg, current_selected_urgs),
             use_container_width=True,
             hide_index=True,
-        )
-        st.markdown(
-            f"**Total: {vacina_group['Quantidade'].sum():,.0f}**".replace(",", ".")
-        )
-
-    render_top_por_urg(df_filt, "Quantidade", "Principais Escolas por URG", "Escola")
-    render_top_por_urg(df_filt, "Quantidade", "Principais Vacinas por URG", "Vacina")
-
-    st.subheader("Comparativo Anual de Vacinação")
-    if df_ano_exibir.empty:
-        st.info(
-            "Dados agregados de Vacinação por ano não estão disponíveis ou houve erro na leitura do CSV."
+            on_select=sync_urg_table_to_global_vacinacao,
+            selection_mode="multi-row",
+            key="urg_table_selection_vacinacao"
         )
     else:
-        df_ano_filtrado = df_ano_exibir.copy()
-        if urgs_aplicadas and "URG" in df_ano_filtrado.columns:
-            df_ano_filtrado = df_ano_filtrado[
-                df_ano_filtrado["URG"].isin(urgs_aplicadas)
-            ]
-        escolas_disponiveis_ano = (
-            sorted(df_ano_filtrado["Escola"].dropna().astype(str).unique())
-            if "Escola" in df_ano_filtrado.columns
-            else []
-        )
-        escolas_selecionadas_ano = st.multiselect(
-            "Filtrar Escola no comparativo anual",
-            options=escolas_disponiveis_ano,
-            default=[],
-            placeholder="Todas as Escolas",
-            key="vacinacao_comparativo_escola",
-        )
-        if escolas_selecionadas_ano and "Escola" in df_ano_filtrado.columns:
-            df_ano_filtrado = df_ano_filtrado[
-                df_ano_filtrado["Escola"].astype(str).isin(escolas_selecionadas_ano)
-            ]
+        st.info("Dados insuficientes para gerar a tabela de performance.")
+    
+    # --- PRIORIDADE 3: DETALHAMENTO TOP POR URG (ESCOLAS E VACINAS) ---
+    render_top_por_urg(
+        df_filt_no_escola[df_filt_no_escola["Ano"].isin(selected_years_comp)] if not df_filt_no_escola.empty else pd.DataFrame(), 
+        "Quantidade", 
+        "Principais Escolas por URG", 
+        "Escola", 
+        table_key="escola_table_selection_vacinacao",
+        active_row_value=selected_escola_from_table
+    )
+    render_top_por_urg(
+        df_filt[df_filt["Ano"].isin(selected_years_comp)] if not df_filt.empty else pd.DataFrame(), 
+        "Quantidade", 
+        "Principais Vacinas por URG", 
+        "Vacina"
+    )
 
-        st.dataframe(df_ano_filtrado, use_container_width=True, hide_index=True)
+    st.markdown("---")
+
+    # --- PRIORIDADE 3 (BASE): GRÁFICO DE PERFORMANCE POR URG ---
+    st.subheader("Comparativo Anual de Vacinação por URG")
+    render_grouped_bar_anual(df_filt, "Quantidade", "", orientation="h")
+    st.markdown("---")
+
+    # --- DISTRIBUIÇÃO POR TIPO DE VACINA (GRÁFICO AGRUPADO) ---
+    st.subheader("Distribuição por Tipo de Vacina")
+    render_grouped_bar_anual(df_filt, "Quantidade", "", x_col="Vacina", orientation="h")
+    
+    st.markdown("### Tabela Comparativa de Vacinação por Ano")
+    df_cmp_vacina = build_comparativo_anual(df_filt, "Vacina")
+    if df_cmp_vacina is not None:
+        st.dataframe(df_cmp_vacina, use_container_width=True, hide_index=True)
+        st.caption("Nota: As colunas '% Total' representam o percentual de representatividade da Vacina sobre o total realizado no respectivo ano.")
+
+
 
     st.markdown("---")
     st.subheader("Detalhamento por Aluno (VacinacaoAluno)")
@@ -250,11 +545,19 @@ def page_vacinacao():
             "Dados de alunos não estão disponíveis ou houve erro na leitura do CSV."
         )
     else:
-        df_aluno_filtrado = filter_by_sidebar_selections(df_aluno, selections)
-        if vacinas_selecionadas and "Vacina" in df_aluno_filtrado.columns:
-            df_aluno_filtrado = df_aluno_filtrado[
-                df_aluno_filtrado["Vacina"].isin(vacinas_selecionadas)
-            ]
+        # ── LÓGICA DE FILTRAGEM CRUZADA PARA O DETALHAMENTO ──
+        df_aluno_base = filter_by_sidebar_selections(df_aluno, selections)
+        
+        # Filtro de vacina da sidebar (se houver)
+        if vacinas_selecionadas and "Vacina" in df_aluno_base.columns:
+            df_aluno_base = df_aluno_base[df_aluno_base["Vacina"].isin(vacinas_selecionadas)]
+
+        # Determinar quais alunos exibir: aqueles que possuem registros com as vacinas selecionadas na TABELA
+        if selected_vacs_from_table:
+            matching_ids = df_aluno_base[df_aluno_base["Vacina"].isin(selected_vacs_from_table)][["Aluno", "DataNascimento"]].drop_duplicates()
+            df_aluno_filtrado = df_aluno_base.merge(matching_ids, on=["Aluno", "DataNascimento"])
+        else:
+            df_aluno_filtrado = df_aluno_base.copy()
 
         aluno_col = "Aluno"
         serie_col = "Serie"
@@ -331,17 +634,87 @@ def page_vacinacao():
 
             df_aluno_para_exibir = df_aluno_filtrado.copy()
             if not df_aluno_para_exibir.empty:
-                df_aluno_para_exibir["Menu"] = df_aluno_para_exibir.apply(
-                    build_perfil_link, axis=1
-                )
-            if "DataNascimento" in df_aluno_para_exibir.columns:
-                df_aluno_para_exibir["DataNascimento"] = pd.to_datetime(
-                    df_aluno_para_exibir["DataNascimento"], errors="coerce"
-                ).dt.strftime("%d/%m/%Y")
+                # 1. Obter atributos estáticos
+                static_cols = ["Sexo", "URG", "Escola", "Serie", "Turma"]
+                static_cols = [c for c in static_cols if c in df_aluno_para_exibir.columns]
+                
+                df_static = df_aluno_para_exibir.groupby(["Aluno", "DataNascimento"], as_index=False)[static_cols].last()
+                
+                # 2. Criar descrição textual formatada (substituindo Qtd por nomes das vacinas)
+                def format_vac_list(group):
+                    vacs = sorted(group["Vacina"].dropna().unique())
+                    formatted_vacs = []
+                    for v in vacs:
+                        # Destaque se estiver na seleção da tabela ou da sidebar via UPPERCASE
+                        is_selected = (selected_vacs_from_table and v in selected_vacs_from_table) or \
+                                      (vacinas_selecionadas and v in vacinas_selecionadas)
+                        if is_selected:
+                            formatted_vacs.append(v.upper())
+                        else:
+                            formatted_vacs.append(v.lower().capitalize())
+                    return ", ".join(formatted_vacs)
+
+                df_desc = df_aluno_para_exibir.groupby(["Aluno", "DataNascimento", "Ano"]).apply(format_vac_list).reset_index(name="Descricao")
+                
+                # 3. Pivotar os anos para colunas com a descrição textual
+                df_pivot_ano = df_desc.pivot(index=["Aluno", "DataNascimento"], columns="Ano", values="Descricao").fillna("").reset_index()
+                anos_cols = [c for c in df_pivot_ano.columns if c not in ["Aluno", "DataNascimento"]]
+                
+                # 4. Mesclar dados estáticos
+                df_aluno_final = df_static.merge(df_pivot_ano, on=["Aluno", "DataNascimento"], how="left")
+                
+                # 5. Calcular Total (Qtd total de registros para o aluno)
+                df_counts_total = df_aluno_para_exibir.groupby(["Aluno", "DataNascimento"]).size().reset_index(name="Total")
+                df_aluno_final = df_aluno_final.merge(df_counts_total, on=["Aluno", "DataNascimento"], how="left")
+                
+                # 6. Formatação final
+                for c in anos_cols:
+                    df_aluno_final[c] = df_aluno_final[c].fillna("")
+                
+                if "Total" in df_aluno_final.columns:
+                    df_aluno_final["Total"] = df_aluno_final["Total"].apply(lambda x: f"{int(x)}" if pd.notna(x) and x > 0 else "")
+                
+                # Link do Menu
+                df_aluno_final["Menu"] = df_aluno_final.apply(build_perfil_link, axis=1)
+                
+                # Formatar Data de Nascimento
+                if "DataNascimento" in df_aluno_final.columns:
+                    df_aluno_final["DataNascimento"] = pd.to_datetime(
+                        df_aluno_final["DataNascimento"], errors="coerce"
+                    ).dt.strftime("%d/%m/%Y")
+                    
+                # Reordenar colunas
+                col_order = ["Aluno", "DataNascimento", "Sexo", "URG", "Escola", "Serie", "Turma"]
+                col_order = [c for c in col_order if c in df_aluno_final.columns] + anos_cols + ["Total", "Menu"]
+                df_aluno_final = df_aluno_final[col_order].fillna("")
+            else:
+                df_aluno_final = pd.DataFrame()
 
             preview_limit = 500
+            df_aluno_head = df_aluno_final.head(preview_limit).reset_index(drop=True)
+
+            hover_styles_aluno = [
+                {"selector": "thead th", "props": [("text-align", "center"), ("background-color", "#161c26"), ("font-weight", "bold")]},
+                {"selector": "thead tr:first-child th", "props": [("border-bottom", "2px solid rgba(255, 255, 255, 0.2)"), ("background-color", "#12171f")]},
+                {"selector": "tbody tr:hover td", "props": [("background-color", "#374151 !important")]},
+                {"selector": "tbody tr:hover th", "props": [("background-color", "#374151 !important")]},
+            ]
+
+            def _zebra_aluno(row):
+                bg = "#1e2530" if row.name % 2 == 0 else "#161c26"
+                style = f"background-color: {bg}; border: 1px solid rgba(255, 255, 255, 0.05);"
+                return [style] * len(row)
+
+            styled_aluno = (
+                df_aluno_head.style
+                .apply(_zebra_aluno, axis=1)
+                .set_properties(**{"text-align": "left"})
+                .set_table_styles(hover_styles_aluno)
+                .hide(axis="index")
+            )
+
             st.dataframe(
-                df_aluno_para_exibir.head(preview_limit),
+                styled_aluno,
                 use_container_width=True,
                 hide_index=True,
                 column_config={

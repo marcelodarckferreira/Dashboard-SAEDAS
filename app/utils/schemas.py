@@ -229,3 +229,43 @@ SCHEMA_HOME_ANO = {
     "2026",
     "Total",
 }
+
+# Médico (atendimentos)
+SCHEMA_MEDICO = {
+    "Ano",
+    "IdUrg",
+    "URG",
+    "Escola",
+    "Tipo",
+    "Descricao",
+    "Qtd",
+}
+
+# Médico por aluno
+SCHEMA_MEDICO_ALUNO = {
+    "Ano",
+    "ID",
+    "Aluno",
+    "DtNasc",
+    "Sexo",
+    "Profissional",
+    "IdUrg",
+    "URG",
+    "Escola",
+    "Tipo",
+    "Serie",
+    "Turma",
+}
+
+# Médico por ano (agregado)
+SCHEMA_MEDICO_ANO = {
+    "URG",
+    "Escola",
+    "Atendimento",
+    "2022",
+    "2023",
+    "2024",
+    "2025",
+    "2026",
+    "Total",
+}

@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+from app.utils.state_manager import sync_sidebar_to_home, sync_sidebar_urg_to_home
 
 def sidebar_filters(df, filter_config):
     """
@@ -71,7 +72,8 @@ def sidebar_filters(df, filter_config):
         anos_selecionados_usr = st.sidebar.multiselect(
             "Selecione o(s) Ano(s):",
             options=anos_disponiveis_geral,
-            default=[],
+            key="sidebar_year_filter",
+            on_change=sync_sidebar_to_home,
             placeholder="Todos"
         )
         # Se nada selecionado pelo usuário, considera todos os anos disponíveis para o filtro
@@ -100,7 +102,8 @@ def sidebar_filters(df, filter_config):
         urgs_selecionadas_usr = st.sidebar.multiselect(
             "Selecione a(s) URG(s):",
             options=urgs_disponiveis_geral,
-            default=[],
+            key="sidebar_urg_filter",
+            on_change=sync_sidebar_urg_to_home,
             placeholder="Todas"
         )
         urgs_para_aplicar_filtro = urgs_disponiveis_geral if not urgs_selecionadas_usr else urgs_selecionadas_usr
@@ -127,7 +130,8 @@ def sidebar_filters(df, filter_config):
             "Selecione a(s) Escola(s):",
             options=escolas_disponiveis,
             default=[],
-            placeholder="Todas as Escolas"
+            placeholder="Todas as Escolas",
+            key="sidebar_escola_filter"
         )
         escolas_para_aplicar_filtro = escolas_disponiveis if not escolas_selecionadas_usr else escolas_selecionadas_usr
         selections_dict['escola'] = escolas_para_aplicar_filtro
@@ -143,25 +147,25 @@ def sidebar_filters(df, filter_config):
     tipos_disponiveis_geral = [] # Inicializa
 
     if filter_config.get('tipo', False):
-        # Este bloco é executado se o filtro 'tipo' estiver habilitado em filter_config
+        # O filtro de Tipo só é renderizado se a coluna existir no DataFrame
         if tipo_column_name in df_options_source.columns:
             tipos_disponiveis_geral = sorted(list(df_options_source[tipo_column_name].dropna().unique()))
-            if not tipos_disponiveis_geral: # A coluna existe, mas não há valores únicos não-NaN
-                st.sidebar.warning(f"Não há dados válidos na coluna '{tipo_column_name}' para o filtro de Tipo.")
-        else: # A coluna 'Tipo' não existe no DataFrame de origem
-            st.sidebar.warning(f"Coluna '{tipo_column_name}' não encontrada no DataFrame para o filtro de Tipo.")
-            # tipos_disponiveis_geral permanece []
-
-        tipos_selecionados_usr = st.sidebar.multiselect(
-            "Selecione o(s) Tipo(s):", # Rótulo simplificado
-            options=tipos_disponiveis_geral, # Usa a lista potencialmente vazia
-            default=[],
-            placeholder="Todos"
-        )
-        tipos_para_aplicar_filtro = tipos_disponiveis_geral if not tipos_selecionados_usr else tipos_selecionados_usr
-        selections_dict['tipo'] = tipos_para_aplicar_filtro
-        if tipo_column_name in df_filtered.columns and tipos_para_aplicar_filtro:
-            df_filtered = df_filtered[df_filtered[tipo_column_name].isin(tipos_para_aplicar_filtro)]
+            
+            tipos_selecionados_usr = st.sidebar.multiselect(
+                "Selecione o(s) Tipo(s):",
+                options=tipos_disponiveis_geral,
+                default=[],
+                placeholder="Todos",
+                key="sidebar_tipo_filter"
+            )
+            tipos_para_aplicar_filtro = tipos_disponiveis_geral if not tipos_selecionados_usr else tipos_selecionados_usr
+            selections_dict['tipo'] = tipos_para_aplicar_filtro
+            
+            if tipo_column_name in df_filtered.columns and tipos_para_aplicar_filtro:
+                df_filtered = df_filtered[df_filtered[tipo_column_name].isin(tipos_para_aplicar_filtro)]
+        else:
+            # Coluna não existe: limpa a seleção para não afetar a lógica a jusante
+            selections_dict['tipo'] = []
     else:
         # O filtro 'tipo' não está ativo. Popula selections_dict com todas as opções disponíveis da coluna 'Tipo', se existir.
         if tipo_column_name in df_options_source.columns:

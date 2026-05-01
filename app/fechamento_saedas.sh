@@ -1,13 +1,21 @@
 #!/bin/bash
 
-# Configurações de acesso
-USER="admexport"
-PASSWORD="@Suporte0102"
-DATABASE="semug"
-SERVER="172.15.2.2,1041"
+# Carregamento de Configurações (.env)
+ENV_FILE="$(dirname "$0")/.env"
+if [ -f "$ENV_FILE" ]; then
+    export $(grep -v '^#' "$ENV_FILE" | xargs)
+else
+    echo "Erro: Arquivo .env não encontrado em $ENV_FILE"
+    exit 1
+fi
+
+USER="$DB_USER"
+PASSWORD="$DB_PASSWORD"
+DATABASE="$DB_NAME"
+SERVER="$DB_SERVER"
 
 # Log
-LOGFILE="/media/db/saedas/app/fechamento_saedas.log"
+LOGFILE="${LOG_PATH}fechamento_saedas.log"
 
 echo "----------------------------------------" >> "$LOGFILE"
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] Iniciando execução do fechamento" >> "$LOGFILE"

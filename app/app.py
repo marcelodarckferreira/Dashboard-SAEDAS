@@ -20,7 +20,12 @@ from .app_pages.consulta import page_consulta
 from .app_pages.exame import page_exame
 from .app_pages.vacinacao import page_vacinacao
 from .app_pages.nutricao import page_nutricao
+from .app_pages.medico import page_medico
 from .app_pages.aluno import page_aluno
+from .utils.state_manager import init_global_state
+
+# Inicializa o estado global (ex: sincronização de filtros)
+init_global_state()
 
 # Configurações da página
 st.set_page_config(
@@ -38,9 +43,19 @@ st.markdown(
 # CSS global
 apply_global_css()
 
-# Tratamento de deep-link para abrir a página de Aluno com seleção prévia
+# --- Tratamento de Parâmetros de URL (Deep-linking) ---
 params = st.query_params
-if "aluno" in params or params.get("menu") in (["Aluno"], "Aluno"):
+menu_options_all = ["Início", "Encaminhamentos", "Exames", "Vacinação", "Nutrição", "Médico", "Aluno"]
+
+# 1. Verifica se há um parâmetro de menu na URL
+menu_param = params.get("menu")
+if isinstance(menu_param, list): menu_param = menu_param[0]
+
+if menu_param in menu_options_all:
+    st.session_state["menu_escolhido"] = menu_param
+
+# 2. Lógica específica para Aluno (Busca automática)
+if "aluno" in params:
     def _first(value):
         if isinstance(value, list):
             return value[0] if value else None
@@ -51,10 +66,15 @@ if "aluno" in params or params.get("menu") in (["Aluno"], "Aluno"):
     if aluno_param:
         st.session_state["aluno_preselect"] = {"nome": aluno_param, "nasc": nasc_param}
     st.session_state["menu_escolhido"] = "Aluno"
-    try:
-        st.query_params.clear()
-    except Exception:
-        pass
+    
+# Limpa apenas os parâmetros de roteamento global processados para evitar loops, 
+# mas preserva parâmetros de filtro de página (como toggle_reg)
+for k in ["menu", "aluno", "nasc"]:
+    if k in st.query_params:
+        try:
+            del st.query_params[k]
+        except:
+            pass
 
 
 # --- Sidebar customizada ---
@@ -94,6 +114,7 @@ with st.sidebar:
         "Exames",
         "Vacinação",
         "Nutrição",
+        "Médico",
         "Aluno",
     ]
     default_option = st.session_state.get("menu_escolhido", menu_options[0])
@@ -110,6 +131,7 @@ with st.sidebar:
             "file-medical",
             "shield-plus",
             "egg-fried",
+            "heart-pulse",
             "person",
         ],
         default_index=default_index,
@@ -117,10 +139,7 @@ with st.sidebar:
     )
     st.session_state["menu_escolhido"] = menu_escolhido
 
-# Força abertura da página de Aluno quando o parâmetro menu=Aluno vier na URL
-if st.query_params.get("menu") in (["Aluno"], "Aluno"):
-    menu_escolhido = "Aluno"
-    st.session_state["menu_escolhido"] = "Aluno"
+# O menu_escolhido final é determinado pelo option_menu ou pelo estado injetado acima
 
 
 # --- Roteamento ---
@@ -134,6 +153,8 @@ elif menu_escolhido == "Vacinação":
     page_vacinacao()
 elif menu_escolhido == "Nutrição":
     page_nutricao()
+elif menu_escolhido == "Médico":
+    page_medico()
 elif menu_escolhido == "Aluno":
     page_aluno()
 

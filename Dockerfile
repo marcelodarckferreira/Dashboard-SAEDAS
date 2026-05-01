@@ -1,25 +1,33 @@
-FROM python:3.12.6-slim
+FROM python:3.12.13-slim-bookworm
 
-# Define o diretório de trabalho
-WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    STREAMLIT_SERVER_PORT=8501 \
+    STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
+    STREAMLIT_BROWSER_GATHER_USAGE_STATS=false \
+    TZ=America/Sao_Paulo
 
-# Instala dependências do sistema necessárias para bibliotecas como Pillow
-RUN apt-get update && apt-get install -y \
+WORKDIR /SAEDAS
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
-    libxrender-dev \
+    libxrender1 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copia os arquivos de dependências e instala as bibliotecas Python necessárias
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Copia o restante do código da aplicação
-COPY . .
+RUN pip install --upgrade pip \
+    && pip install -r requirements.txt
 
-# Expõe a porta padrão do Streamlit
+COPY app/ app/
+
 EXPOSE 8501
 
-# Comando para iniciar o aplicativo Streamlit
-CMD ["streamlit", "run", "app.py", "--server.enableCORS=false", "--server.port=8501", "--server.address=0.0.0.0"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl -f http://localhost:8501/_stcore/health || exit 1
+
+CMD ["streamlit", "run", "app/app.py"]

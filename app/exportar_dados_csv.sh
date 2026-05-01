@@ -1,12 +1,20 @@
 #!/bin/bash
 
 # ======================
-# Configurações de acesso
+# Carregamento de Configurações (.env)
 # ======================
-USER="admexport"
-PASSWORD="@Suporte0102"
-DATABASE="semug"
-SERVER="172.15.2.2,1041"
+ENV_FILE="$(dirname "$0")/.env"
+if [ -f "$ENV_FILE" ]; then
+    export $(grep -v '^#' "$ENV_FILE" | xargs)
+else
+    echo "Erro: Arquivo .env não encontrado em $ENV_FILE"
+    exit 1
+fi
+
+USER="$DB_USER"
+PASSWORD="$DB_PASSWORD"
+DATABASE="$DB_NAME"
+SERVER="$DB_SERVER"
 
 # ======================
 # Arquivos CSV
@@ -137,7 +145,7 @@ CABECALHO10="Ano;IdUrg;URG;Escola;Tipo;Descricao;Qtd"
 # ======================
 # Log
 # ======================
-LOGFILE="/media/db/saedas/app/exportar_dados.log"
+LOGFILE="${LOG_PATH}exportar_dados.log"
 
 # ======================
 # Função de exportação com cabeçalho e uso de arquivo temporário

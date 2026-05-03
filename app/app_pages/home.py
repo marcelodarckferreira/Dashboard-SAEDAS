@@ -2489,7 +2489,8 @@ def page_home():
                 if _colunas_ativo
                 else ""
             )
-            st.markdown(_active_css, unsafe_allow_html=True)
+            if _active_css:
+                st.markdown(_active_css, unsafe_allow_html=True)
 
             st.markdown('<div class="saedas-toolbar-right">', unsafe_allow_html=True)
             _col_colunas, _col_copiar, _col_csv = st.columns([1, 1, 1], gap="small")

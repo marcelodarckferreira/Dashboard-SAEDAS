@@ -1206,7 +1206,7 @@ def page_home():
                                 },
                             )
                             
-                            st.plotly_chart(fig_cov, width="stretch", key=f"donut_cov_{ano}")
+                            st.plotly_chart(fig_cov, use_container_width=True, key=f"donut_cov_{ano}")
                         else:
                             st.info(f"Sem dados de cobertura para {ano}")
 
@@ -1244,7 +1244,7 @@ def page_home():
                     texttemplate="%{y:,.0f}", textposition="outside"
                 )
 
-                st.plotly_chart(fig_home_bar, width="stretch")
+                st.plotly_chart(fig_home_bar, use_container_width=True)
 
 
 
@@ -1313,7 +1313,7 @@ def page_home():
 
             fig_prof_pie.update_layout(separators=".", legend_title_text="Atendimento")
 
-            st.plotly_chart(fig_prof_pie, width="stretch")
+            st.plotly_chart(fig_prof_pie, use_container_width=True)
 
         else:
             st.info(
@@ -1405,7 +1405,7 @@ def page_home():
                 texttemplate="%{text:,.0f}", textposition="outside"
             )
 
-            st.plotly_chart(fig_prof_total_bar_yearly, width="stretch")
+            st.plotly_chart(fig_prof_total_bar_yearly, use_container_width=True)
 
         else:
             st.info(
@@ -1517,7 +1517,7 @@ def page_home():
                         texttemplate="%{text:,.0f}", textposition="outside"
                     )
 
-                    st.plotly_chart(fig_ano_action, width="stretch")
+                    st.plotly_chart(fig_ano_action, use_container_width=True)
 
                 else:
                     st.info(
@@ -1580,7 +1580,7 @@ def page_home():
                 texttemplate="%{value:,.0f}", textposition="outside"
             )
 
-            st.plotly_chart(fig_urg_prof, width="stretch")
+            st.plotly_chart(fig_urg_prof, use_container_width=True)
 
         else:
             st.info(

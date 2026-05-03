@@ -2560,33 +2560,6 @@ def page_home():
                 theme="streamlit",
             )
 
-            copy_feedback_placeholder = st.empty()
-            copy_row = st.columns([1.4, 1.2, 4.4])
-            with copy_row[0]:
-                if st.button(
-                    "Copiar tabela (Detalhamento)",
-                    key="copy_home_detail_table_aggrid",
-                    help="Copiar tabela (Detalhamento dos Dados) para a área de transferência",
-                ):
-                    try:
-                        df_display_for_copy.to_clipboard(index=False, excel=True)
-                        copy_feedback_placeholder.success(
-                            "Tabela copiada. Cole no Excel usando Ctrl+V."
-                        )
-                    except Exception as clipboard_exc:
-                        copy_feedback_placeholder.error(
-                            f"Não foi possível copiar automaticamente: {clipboard_exc}"
-                        )
-            with copy_row[1]:
-                st.download_button(
-                    label="Exportar CSV",
-                    data=csv_visible_data,
-                    file_name="detalhamento_home.csv",
-                    mime="text/csv",
-                    key="download_csv_home_visible_aggrid_bottom",
-                    help="Exportar tabela (CSV)",
-                )
-
         # If df_display is empty but df_filtrado wasn't (meaning filters resulted in no detailed rows)
 
         # The message "Nenhum dado detalhado para exibir..." is already handled above.

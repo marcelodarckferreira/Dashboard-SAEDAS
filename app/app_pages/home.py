@@ -2475,26 +2475,56 @@ def page_home():
                 index=False, sep=";"
             ).encode("utf-8-sig")
 
-            toolbar_container = st.container()
+            _colunas_ativo = st.session_state["home_show_column_selector"]
 
-            with toolbar_container:
-                st.markdown('<div class="home-toolbar-row">', unsafe_allow_html=True)
+            _active_css = (
+                """
+<style>
+.saedas-toolbar-right div[data-testid="column"]:first-of-type button {
+    background: #1e3a5f !important;
+    color: #60a5fa !important;
+}
+</style>
+"""
+                if _colunas_ativo
+                else ""
+            )
+            st.markdown(_active_css, unsafe_allow_html=True)
 
-                column_col, export_col = st.columns([1, 1], gap="small")
+            st.markdown('<div class="saedas-toolbar-right">', unsafe_allow_html=True)
+            _col_colunas, _col_copiar, _col_csv = st.columns([1, 1, 1], gap="small")
 
-                with column_col:
-                    column_toggle_clicked = st.button(
-                        "Colunas",
-                        key="home_toolbar_column_toggle",
-                        help="Mostrar/ocultar colunas da tabela",
-                    )
+            with _col_colunas:
+                if st.button(
+                    "⚙️ Colunas",
+                    key="home_toolbar_column_toggle",
+                    help="Mostrar/ocultar colunas da tabela",
+                ):
+                    st.session_state["home_show_column_selector"] = not _colunas_ativo
 
-                    if column_toggle_clicked:
-                        st.session_state["home_show_column_selector"] = (
-                            not st.session_state["home_show_column_selector"]
-                        )
+            with _col_copiar:
+                if st.button(
+                    "📋 Copiar",
+                    key="home_toolbar_copy",
+                    help="Copiar tabela para área de transferência (Excel)",
+                ):
+                    try:
+                        df_display_for_copy.to_clipboard(index=False, excel=True)
+                        st.toast("Tabela copiada. Cole no Excel com Ctrl+V.")
+                    except Exception as _copy_exc:
+                        st.toast(f"Não foi possível copiar: {_copy_exc}", icon="❌")
 
-                st.markdown("</div>", unsafe_allow_html=True)
+            with _col_csv:
+                st.download_button(
+                    label="⬇️ CSV",
+                    data=csv_visible_data,
+                    file_name="detalhamento_home.csv",
+                    mime="text/csv",
+                    key="download_csv_home_toolbar",
+                    help="Exportar tabela como CSV",
+                )
+
+            st.markdown("</div>", unsafe_allow_html=True)
 
             if st.session_state["home_show_column_selector"]:
                 selected_hidden_columns = st.multiselect(
@@ -2504,9 +2534,7 @@ def page_home():
                     key="home_hidden_columns_selector",
                     help="Selecione as colunas que deseja ocultar na tabela",
                 )
-
                 st.session_state["home_hidden_columns"] = selected_hidden_columns
-
             else:
                 st.session_state["home_hidden_columns"] = selected_hidden_columns
 

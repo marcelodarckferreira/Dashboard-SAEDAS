@@ -1,0 +1,221 @@
+<h2>Design final — Toolbar unificada</h2>
+<p class="subtitle">Revise o layout completo antes da aprovação. Clique em "✅ Aprovado" se estiver certo.</p>
+
+<style>
+  .sim-page {
+    background: #0f1117;
+    border-radius: 10px;
+    padding: 20px 24px;
+    font-family: 'Source Sans Pro', sans-serif;
+    font-size: 0.8rem;
+  }
+  .sim-title { color: #cbd5e1; font-size: 0.95rem; font-weight: 700; margin-bottom: 12px; }
+
+  /* ── TOOLBAR ROW ── */
+  .toolbar-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .toolbar-left { color: #64748b; font-size: 0.72rem; }
+
+  /* Grupo unificado */
+  .btn-group {
+    display: flex;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .btn-g {
+    background: transparent;
+    border: none;
+    border-right: 1px solid #334155;
+    color: #94a3b8;
+    height: 32px;
+    padding: 0 12px;
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.75rem; cursor: pointer; white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+  }
+  .btn-g:last-child { border-right: none; }
+  .btn-g:hover { background: #1e293b; color: #e2e8f0; }
+  .btn-g.active { background: #1e3a5f; color: #60a5fa; border-color: #1e40af; }
+
+  /* ── MULTISELECT (expansível) ── */
+  .multiselect-row {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .ms-label { color: #64748b; font-size: 0.7rem; white-space: nowrap; }
+  .chip {
+    background: #0f172a; border: 1px solid #334155;
+    border-radius: 14px; padding: 2px 10px;
+    font-size: 0.68rem; color: #94a3b8;
+  }
+  .ms-placeholder { color: #475569; font-size: 0.7rem; }
+
+  /* ── AGGRID TABLE ── */
+  .ag-mock {
+    border: 1px solid #334155;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 0;
+  }
+  .ag-header-row {
+    display: flex;
+    background: #1e293b;
+    border-bottom: 1px solid #334155;
+  }
+  .ag-col {
+    flex: 1; padding: 5px 8px;
+    color: #94a3b8; font-size: 0.68rem; font-weight: 600;
+    border-right: 1px solid #334155; white-space: nowrap; overflow: hidden;
+  }
+  .ag-col:last-child { border-right: none; }
+  .ag-data-row {
+    display: flex;
+    border-bottom: 1px solid #1e293b;
+  }
+  .ag-data-row:last-child { border-bottom: none; }
+  .ag-cell {
+    flex: 1; padding: 5px 8px;
+    color: #cbd5e1; font-size: 0.68rem;
+    border-right: 1px solid #1e293b; white-space: nowrap; overflow: hidden;
+  }
+  .ag-cell:last-child { border-right: none; }
+  .ag-footer-row {
+    display: flex;
+    background: #1e293b;
+    border-top: 2px solid #334155;
+  }
+  .ag-footer-cell {
+    flex: 1; padding: 5px 8px;
+    color: #e2e8f0; font-size: 0.68rem; font-weight: 700;
+    border-right: 1px solid #334155;
+  }
+  .ag-footer-cell:last-child { border-right: none; }
+
+  /* ── ANOTAÇÕES ── */
+  .annotation {
+    display: flex; align-items: flex-start; gap: 10px;
+    margin-top: 14px;
+  }
+  .ann-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+  .ann-text { color: #64748b; font-size: 0.72rem; line-height: 1.5; }
+  .ann-text strong { color: #94a3b8; }
+
+  .removed-note {
+    background: #1c0a0a;
+    border: 1px solid #7f1d1d;
+    border-radius: 6px;
+    padding: 8px 14px;
+    color: #fca5a5;
+    font-size: 0.72rem;
+    margin-top: 12px;
+  }
+</style>
+
+<div class="mockup">
+  <div class="mockup-header">Preview — Tabela de Detalhamento (Dark Mode)</div>
+  <div class="mockup-body">
+    <div class="sim-page">
+      <div class="sim-title">Detalhamento dos Dados</div>
+
+      <!-- TOOLBAR -->
+      <div class="toolbar-row">
+        <span class="toolbar-left">Padrão &nbsp;○ 20 &nbsp;○ 50 &nbsp;○ 100</span>
+        <div class="btn-group">
+          <div class="btn-g active">⚙️ Colunas</div>
+          <div class="btn-g">📋 Copiar</div>
+          <div class="btn-g">⬇️ CSV</div>
+        </div>
+      </div>
+
+      <!-- MULTISELECT (visível quando Colunas ativo) -->
+      <div class="multiselect-row">
+        <span class="ms-label">Colunas a ocultar:</span>
+        <span class="chip">Fechamento ✕</span>
+        <span class="chip">PAP (%) ✕</span>
+        <span class="ms-placeholder">+ adicionar coluna...</span>
+      </div>
+
+      <!-- AGGRID SIMULADO -->
+      <div class="ag-mock">
+        <div class="ag-header-row">
+          <div class="ag-col">Ano</div>
+          <div class="ag-col">URG</div>
+          <div class="ag-col">Escola</div>
+          <div class="ag-col">Início</div>
+          <div class="ag-col">Al. Escola</div>
+          <div class="ag-col">PAE (%)</div>
+          <div class="ag-col">Al. Atend.</div>
+        </div>
+        <div class="ag-data-row">
+          <div class="ag-cell">2.026</div>
+          <div class="ag-cell">URG VIII</div>
+          <div class="ag-cell">E M PROF DARCY...</div>
+          <div class="ag-cell">05/03/2026</div>
+          <div class="ag-cell">582</div>
+          <div class="ag-cell">100</div>
+          <div class="ag-cell">480</div>
+        </div>
+        <div class="ag-footer-row">
+          <div class="ag-footer-cell">—</div>
+          <div class="ag-footer-cell">TOTAL</div>
+          <div class="ag-footer-cell">—</div>
+          <div class="ag-footer-cell">—</div>
+          <div class="ag-footer-cell">582</div>
+          <div class="ag-footer-cell">—</div>
+          <div class="ag-footer-cell">480</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ANOTAÇÕES -->
+<div class="section">
+  <h3>O que muda</h3>
+  <div class="annotation">
+    <div class="ann-dot" style="background:#22c55e;"></div>
+    <div class="ann-text"><strong>⚙️ Colunas</strong> — toggle que abre/fecha o multiselect acima da tabela. Fica destacado (azul) quando o painel está aberto.</div>
+  </div>
+  <div class="annotation">
+    <div class="ann-dot" style="background:#22c55e;"></div>
+    <div class="ann-text"><strong>📋 Copiar</strong> — copia a tabela visível para clipboard em formato Excel (<code>to_clipboard(index=False, excel=True)</code>). Feedback de sucesso por 2s.</div>
+  </div>
+  <div class="annotation">
+    <div class="ann-dot" style="background:#22c55e;"></div>
+    <div class="ann-text"><strong>⬇️ CSV</strong> — <code>st.download_button</code> nativo. Baixa o arquivo com separador <code>;</code> e encoding UTF-8-BOM.</div>
+  </div>
+  <div class="annotation">
+    <div class="ann-dot" style="background:#334155;"></div>
+    <div class="ann-text"><strong>Implementação</strong> — <code>st.columns([left, right])</code> para alinhar à direita + CSS injection para bordas unificadas nos botões nativos <code>st.button()</code>.</div>
+  </div>
+
+  <div class="removed-note">
+    🗑️ <strong>Removidos:</strong> botões "Copiar tabela (Detalhamento)" e "Exportar CSV" que ficavam <em>abaixo</em> da tabela — substituídos pela nova toolbar acima.
+  </div>
+</div>
+
+<div class="options" style="margin-top:24px;">
+  <div class="option" data-choice="approved" onclick="toggleSelect(this)">
+    <div class="letter">✅</div>
+    <div class="content">
+      <h3>Aprovado — pode escrever o spec</h3>
+      <p>Design correto, pode prosseguir para documentação e plano de implementação.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="revise" onclick="toggleSelect(this)">
+    <div class="letter">✏️</div>
+    <div class="content">
+      <h3>Revisar — tenho ajustes</h3>
+      <p>Preciso mudar algo no design antes de continuar.</p>
+    </div>
+  </div>
+</div>

@@ -139,19 +139,6 @@ SCHEMA_VACINACAO_ANO = {
     "Total",
 }
 
-# Vacinação por ano (agregado)
-SCHEMA_VACINACAO_ANO = {
-    "URG",
-    "Escola",
-    "Vacina",
-    "2022",
-    "2023",
-    "2024",
-    "2025",
-    "2026",
-    "Total",
-}
-
 # Nutrição
 SCHEMA_NUTRICAO = {
     "Ano",

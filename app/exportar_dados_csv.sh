@@ -104,24 +104,24 @@ QUERY10="EXEC usp_Exportar_DashboardProfissional"
 # Cabeçalhos CSV corretos
 # ======================
 CABECALHO01="Ano;IdUrg;URG;Escola;DtInicio;DtFechamento;QtdAlunoEscola;QtdAluno;QtdProfessor;QtdPsicologo;QtdAssistSocial;QtdEnfermagem;QtdMedico;QtdVacinacao;QtdVacina;QtdEncaminhamento;QtdExame"
-CABECALHO11="URG;Descricao;2022;2023;2024;2025;Total"
-CABECALHO12="URG;Escola;Descricao;2022;2023;2024;2025;Total"
-CABECALHO13="Descricao;2022;2023;2024;2025;Total"
+CABECALHO11="URG;Descricao;2022;2023;2024;2025;2026;Total"
+CABECALHO12="URG;Escola;Descricao;2022;2023;2024;2025;2026;Total"
+CABECALHO13="Descricao;2022;2023;2024;2025;2026;Total"
 
 CABECALHO02="Ano;IdUrg;URG;Escola;Tipo;Consulta;Qtd"
-CABECALHO021="URG;Escola;Consulta;2022;2023;2024;2025;Total"
+CABECALHO021="URG;Escola;Consulta;2022;2023;2024;2025;2026;Total"
 CABECALHO022="Ano;Aluno;DtNasc;Sexo;Consulta;IdUrg;URG;Escola;Tipo;Serie;Turma"
 
 CABECALHO03="Ano;IdUrg;URG;Escola;Tipo;Exame;Qtd"
-CABECALHO031="URG;Escola;Exame;2022;2023;2024;2025;Total"
+CABECALHO031="URG;Escola;Exame;2022;2023;2024;2025;2026;Total"
 CABECALHO032="Ano;Aluno;DtNasc;Sexo;Exame;IdUrg;URG;Escola;Tipo;Serie;Turma"
 
 CABECALHO04="Ano;IdUrg;URG;Escola;Tipo;Vacina;Qtd"
-CABECALHO041="URG;Escola;Vacina;2022;2023;2024;2025;Total"
+CABECALHO041="URG;Escola;Vacina;2022;2023;2024;2025;2026;Total"
 CABECALHO042="Ano;Aluno;DtNasc;Sexo;Vacina;Dose;Lote;IdUrg;URG;Escola;Tipo;Serie;Turma"
 
 CABECALHO05="Ano;IdUrg;URG;Escola;Tipo;Nutricao;Qtd"
-CABECALHO051="URG;Escola;Nutricao;2022;2023;2024;2025;Total"
+CABECALHO051="URG;Escola;Nutricao;2022;2023;2024;2025;2026;Total"
 CABECALHO052="Ano;Aluno;DtNasc;Sexo;Peso;Altura;IMC;Nutricao;IdUrg;URG;Escola;Tipo;Serie;Turma"
 
 CABECALHO06="Ano;IdUrg;URG;Escola;Tipo;Descricao;Qtd"

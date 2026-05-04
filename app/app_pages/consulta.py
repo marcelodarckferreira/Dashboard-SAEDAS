@@ -1,3 +1,4 @@
+import json
 import pandas as pd
 import plotly.express as px
 import streamlit as st
@@ -7,17 +8,21 @@ from urllib.parse import urlencode
 from components.footer_personal import footer_personal
 from components.sidebar_filters import sidebar_filters
 from app.utils.data_loader import load_csv
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
 from app.utils.page_helpers import (
     filter_by_sidebar_selections,
     build_comparativo_anual,
-    get_native_regulacao_button_type,
     get_selected_comparativo_value,
-    render_metric,
     render_top_por_urg,
     format_filters_applied,
     render_grouped_bar_anual,
-    should_use_native_regulacao_button,
     toggle_multiselect_value,
+    render_section_divider,
+    calcular_altura_aggrid,
+    prepare_comparativo_aggrid_data,
+    split_aggrid_footer,
+    render_table_toolbar,
+    render_saedas_aggrid
 )
 from app.utils.state_manager import init_global_state, sync_home_to_sidebar, sync_home_urg_to_sidebar
 from app.utils.schemas import (
@@ -25,7 +30,7 @@ from app.utils.schemas import (
     SCHEMA_CONSULTA_ALUNO,
     SCHEMA_CONSULTA_ANO,
 )
-from app.utils.styles import apply_global_css, render_metric_cards, style_urg_performance_table
+from app.utils.styles import apply_global_css, render_metric_cards, build_row_style_fn, get_table_hover_styles, apply_saedas_design
 
 
 def carregar_dados_consulta():
@@ -48,195 +53,11 @@ def carregar_dados_consulta():
 
 
 def page_consulta():
-    # --- LÓGICA DE TOGGLE PARA REGULAÇÕES ---
     def toggle_regulacao(reg_name):
         current = st.session_state.get("consulta_encaminhamento_multiselect", [])
         st.session_state["consulta_encaminhamento_multiselect"] = (
             toggle_multiselect_value(current, reg_name)
         )
-
-    st.markdown(
-        """
-        <style>
-            .consulta-metric-card {
-                background: linear-gradient(135deg, #0f172a, #1f2937);
-                border: 1px solid rgba(255,255,255,0.08);
-                border-radius: 12px;
-                padding: 12px 14px;
-                box-shadow: 0 4px 18px rgba(0,0,0,0.18);
-                color: #e5e7eb;
-                display: flex;
-                flex-direction: column;
-                gap: 4px;
-                height: 100%;
-                transition: all 0.3s ease;
-                position: relative;
-                z-index: 1;
-                pointer-events: none !important; /* Permite que o clique passe para o botão */
-            }
-
-            .consulta-metric-card-active {
-                border: 1px solid #3b82f6 !important;
-                background: linear-gradient(135deg, #1e3a8a, #0f172a) !important;
-                box-shadow: 0 0 15px rgba(59, 130, 246, 0.3) !important;
-            }
-
-            .consulta-metric-label {
-                font-size: 0.8rem;
-                letter-spacing: 0.02em;
-                color: #cbd5e1;
-                pointer-events: none !important;
-            }
-
-            .consulta-metric-value {
-                font-size: 1.6rem;
-                font-weight: 700;
-                color: #f8fafc;
-                line-height: 1.2;
-                pointer-events: none !important;
-            }
-
-            /* Overlay do botão invisível */
-            [data-testid="column"],
-            [data-testid="stColumn"] {
-                position: relative !important;
-            }
-            
-            [data-testid="stButton"]:has(button[kind="secondary"]) {
-                position: absolute !important;
-                inset: 0 !important;
-                width: 100% !important;
-                height: 100% !important;
-                z-index: 200 !important;
-                margin: 0 !important;
-                padding: 0 !important;
-            }
-            
-            [data-testid="stButton"] button[kind="secondary"] {
-                position: absolute !important;
-                inset: 0 !important;
-                width: 100% !important;
-                height: 100% !important;
-                background-color: transparent !important;
-                border: none !important;
-                color: transparent !important;
-                opacity: 0 !important;
-                cursor: pointer !important;
-                z-index: 201 !important;
-                pointer-events: auto !important;
-            }
-
-            /* =========================================================
-               Streamlit Native Button as KPI Card
-               Ajustado para o desenho enviado: menos espaço interno e texto à esquerda
-               ========================================================= */
-
-            /* Botão/Card */
-            [data-testid="stButton"] button[kind="primary"],
-            [data-testid="stButton"] button[kind="tertiary"] {
-                width: 100% !important;
-                height: 101px !important;
-                min-height: 101px !important;
-                border-radius: 13px !important;
-
-                /* Reduz o espaço interno do card */
-                padding: 0 !important;
-
-                display: flex !important;
-                flex-direction: column !important;
-                align-items: flex-start !important;
-                justify-content: center !important;
-
-                /* Espaço entre o título e o número */
-                gap: 10px !important;
-
-                text-align: left !important;
-                line-height: 1 !important;
-                overflow: hidden !important;
-                color: #f8fafc !important;
-                background: #172238 !important;
-                box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22) !important;
-                transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease !important;
-            }
-
-            /* Remove aparência nativa de foco do Streamlit */
-            [data-testid="stButton"] button[kind="primary"]:focus,
-            [data-testid="stButton"] button[kind="tertiary"]:focus,
-            [data-testid="stButton"] button[kind="primary"]:focus-visible,
-            [data-testid="stButton"] button[kind="tertiary"]:focus-visible {
-                outline: none !important;
-            }
-
-            /* Força todos os elementos internos para a esquerda */
-            [data-testid="stButton"] button[kind="primary"] *,
-            [data-testid="stButton"] button[kind="tertiary"] * {
-                text-align: left !important;
-                align-self: flex-start !important;
-            }
-
-            /* Texto/Título: DENTISTA */
-            [data-testid="stButton"] button[kind="primary"] p,
-            [data-testid="stButton"] button[kind="tertiary"] p {
-                width: 100% !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                color: #dbeafe !important;
-                font-size: 0.78rem !important;
-                font-weight: 600 !important;
-                letter-spacing: 0.055em !important;
-                line-height: 1.05 !important;
-                text-transform: uppercase !important;
-                pointer-events: none !important;
-            }
-
-            /* Valor: 1.007 */
-            [data-testid="stButton"] button[kind="primary"] strong,
-            [data-testid="stButton"] button[kind="tertiary"] strong {
-                display: block !important;
-                width: 100% !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                color: #ffffff !important;
-                font-size: 1.72rem !important;
-                font-weight: 800 !important;
-                line-height: 1 !important;
-                letter-spacing: -0.04em !important;
-                text-align: left !important;
-                pointer-events: none !important;
-            }
-
-            /* Estado ATIVO */
-            [data-testid="stButton"] button[kind="primary"] {
-                border: 1px solid #3b82f6 !important;
-                background: linear-gradient(135deg, #1e3a8a, #0f172a) !important;
-                box-shadow: 0 0 15px rgba(59, 130, 246, 0.4) !important;
-            }
-
-            /* Estado INATIVO */
-            [data-testid="stButton"] button[kind="tertiary"] {
-                border: 1px solid rgba(148, 163, 184, 0.16) !important;
-                background: #172238 !important;
-                box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22) !important;
-            }
-
-            /* Hover discreto */
-            [data-testid="stButton"] button[kind="primary"]:hover,
-            [data-testid="stButton"] button[kind="tertiary"]:hover {
-                transform: translateY(-1px) !important;
-                border-color: rgba(96, 165, 250, 0.55) !important;
-                background: #1a2942 !important;
-                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.26) !important;
-            }
-
-            /* Clique */
-            [data-testid="stButton"] button[kind="primary"]:active,
-            [data-testid="stButton"] button[kind="tertiary"]:active {
-                transform: translateY(0) !important;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
 
     # Inicializa o estado global sincronizado (Anos e URGs)
     init_global_state()
@@ -247,7 +68,7 @@ def page_consulta():
     )
     filters_placeholder = st.empty()
 
-    apply_global_css()
+    # apply_global_css() — Já injetado no app.py
     datasets = carregar_dados_consulta()
 
     df, info = datasets["principal"]["df"], datasets["principal"]["info"]
@@ -316,7 +137,7 @@ def page_consulta():
         label="Ano(s) de Referência:",
         options=years_options,
         selection_mode="multi",
-        key="home_year_buttons",
+        key="massive_year_selector",
         on_change=sync_home_to_sidebar,
         label_visibility="collapsed"
     )
@@ -366,7 +187,6 @@ def page_consulta():
     encaminhamentos_selecionados = st.sidebar.multiselect(
         "Selecione o(s) Encaminhamento(s):",
         options=encaminhamentos_disponiveis,
-        default=[],
         placeholder="Todos",
         key="consulta_encaminhamento_multiselect"
     )
@@ -415,6 +235,30 @@ def page_consulta():
 
     selections["encaminhamento"] = list(set(selections.get("encaminhamento", []) + encaminhamentos_selecionados)) or encaminhamentos_disponiveis
 
+    # --- Geração do filtro_titulo Dinâmico (Data-Driven UI) ---
+    def get_filter_display_string_for_title(selected_items_list, all_available_items_list):
+        if not selected_items_list or (all_available_items_list and set(map(str, selected_items_list)) == set(map(str, all_available_items_list))):
+            return "Todos"
+        return ", ".join(map(str, sorted(list(set(selected_items_list)))))
+
+    all_urgs_for_title = sorted(list(df["URG"].dropna().unique()))
+    all_years_for_title = sorted(list(df["Ano"].dropna().unique())) if "Ano" in df.columns else []
+    all_escolas_for_title = sorted(list(df["Escola"].dropna().unique()))
+    all_encs_for_title = sorted(list(df["Encaminhamento"].dropna().unique()))
+    
+    current_urgs_for_title = st.session_state["global_urgs"] if st.session_state["global_urgs"] else all_urgs_for_title
+    current_escolas_for_title = selections.get("escola", [])
+    current_encs_for_title = encaminhamentos_selecionados if encaminhamentos_selecionados else all_encs_for_title
+    
+    anos_str = get_filter_display_string_for_title(selected_years_comp, all_years_for_title)
+    urgs_str = get_filter_display_string_for_title(current_urgs_for_title, all_urgs_for_title)
+    escolas_str = get_filter_display_string_for_title(current_escolas_for_title, all_escolas_for_title)
+    encs_str = get_filter_display_string_for_title(current_encs_for_title, all_encs_for_title)
+    
+    filtro_titulo = f"Anos: {anos_str} / URGs: {urgs_str} / Escolas: {escolas_str} / Regulações: {encs_str}"
+
+    st.markdown(f"### Indicadores Gerais ({filtro_titulo})")
+    
     filters_placeholder.markdown(
         "**Filtros aplicados:** "
         + format_filters_applied(
@@ -443,8 +287,9 @@ def page_consulta():
     
     # 1. Indicador principal (Total Geral)
     total_qtd = df_filt["Quantidade"].sum() if not df_filt.empty else 0
-    render_metric("TOTAL DE ENCAMINHAMENTOS", total_qtd)
-    st.markdown(" ")
+    render_metric_cards([{"label": "TOTAL DE ENCAMINHAMENTOS", "value": total_qtd}])
+    
+    render_section_divider()
 
     # Sumário por tipo de consulta (Encaminhamento) - IMUNIDADE AO FILTRO DE REGULAÇÃO
     # Usamos df_filt_no_enc para que todos os rótulos apareçam mesmo com filtros ativos
@@ -458,51 +303,30 @@ def page_consulta():
     encaminhamentos_sum = encaminhamentos_sum[encaminhamentos_sum > 0]
     
     if not encaminhamentos_sum.empty:
-        # Preparamos os itens de encaminhamento (nome, valor, is_active)
-        for start in range(0, len(encaminhamentos_sum), 5):
-            slice_enc = encaminhamentos_sum.iloc[start : start + 5]
-            cols = st.columns(5)
-            for col, (nome, valor) in zip(cols, slice_enc.items()):
-                nome_str = str(nome)
-                # Verifica se está ativo no filtro da sidebar
-                is_active = nome_str in encaminhamentos_selecionados
-                card_class = "consulta-metric-card consulta-metric-card-active" if is_active else "consulta-metric-card"
-                valor_fmt = f"{int(valor):,}".replace(",", ".")
-
-                with col:
-                    if should_use_native_regulacao_button(nome_str):
-                        st.button(
-                            f"{nome_str.upper()}\n\n**{valor_fmt}**",
-                            key=f"btn_reg_{nome_str}",
-                            on_click=toggle_regulacao,
-                            args=(nome_str,),
-                            help=f"Marcar/desmarcar {nome_str.upper()} no filtro de regulação",
-                            type=get_native_regulacao_button_type(
-                                nome_str, encaminhamentos_selecionados
-                            ),
-                            use_container_width=True,
-                        )
-                        continue
-
-                    st.button(
-                        f"Alternar regulação {nome_str}",
-                        key=f"btn_reg_{nome_str}",
-                        on_click=toggle_regulacao,
-                        args=(nome_str,),
-                        help=f"Marcar/desmarcar {nome_str.upper()} no filtro de regulação",
-                    )
-
-                    st.markdown(
-                        f'<div class="{card_class}">'
-                        f'<div class="consulta-metric-label">{nome_str.upper()}</div>'
-                        f'<div class="consulta-metric-value">{valor_fmt}</div>'
-                        "</div>",
-                        unsafe_allow_html=True
-                    )
+        # Preparamos os itens para o novo render_metric_cards em modo toggle
+        kpi_metrics = []
+        for nome, valor in encaminhamentos_sum.items():
+            kpi_metrics.append({
+                "label": str(nome).upper(),
+                "value": valor
+            })
+        
+        # Renderiza em blocos de 5 para manter o grid elegante
+        for i in range(0, len(kpi_metrics), 5):
+            chunk = kpi_metrics[i : i + 5]
+            render_metric_cards(
+                chunk, 
+                is_toggle=True, 
+                active_labels=[l.upper() for l in encaminhamentos_selecionados],
+                on_click_callback=toggle_regulacao
+            )
+            
+        # NOTA: O render_metric_cards agora dispara o callback toggle_regulacao.
+        # Isso restaura a interatividade premium com o design unificado.
     else:
         st.info("Selecione ao menos um ano para visualizar os indicadores.")
     
-    st.markdown("---")
+    render_section_divider()
 
     # --- PRIORIDADE 2 (MEIO): TABELA COMPARATIVA DE PERFORMANCE ---
     st.subheader("Performance por URG")
@@ -537,30 +361,81 @@ def page_consulta():
     # permitindo que a tabela funcione como um controlador mestre de navegação.
 
     current_selected_urgs = st.session_state.get("global_urgs", [])
-    df_cmp_urg = build_comparativo_anual(df_for_urg_table, "URG", active_row_value=current_selected_urgs)
+    df_cmp_urg = build_comparativo_anual(
+        df_for_urg_table, 
+        "URG", 
+        active_row_value=current_selected_urgs,
+        pct_label="Cobertura"
+    )
     
     # Salva o dataframe para o callback
     st.session_state["last_df_cmp_urg_consulta"] = df_cmp_urg
 
     if df_cmp_urg is not None:
-        # Sincronização de Checkboxes (Paridade Sidebar -> Tabela)
-        try:
-            urg_col_values = df_cmp_urg.data[("URG", "")].tolist()
-            target_indices = [i for i, val in enumerate(urg_col_values) if val in current_selected_urgs]
-            
-            current_table_selection = st.session_state.get("urg_table_selection_consulta", {}).get("selection", {}).get("rows", [])
-            if set(target_indices) != set(current_table_selection):
-                st.session_state["urg_table_selection_consulta"] = {"selection": {"rows": target_indices, "columns": []}}
-        except Exception: pass
+        df_cmp_urg_aggrid, column_defs, column_map = prepare_comparativo_aggrid_data(df_cmp_urg)
+        df_cmp_urg_body, footer_rows = split_aggrid_footer(df_cmp_urg_aggrid)
 
-        st.dataframe(
-            style_urg_performance_table(df_cmp_urg, current_selected_urgs),
-            use_container_width=True,
-            hide_index=True,
-            on_select=sync_urg_table_to_global_consulta,
-            selection_mode="multi-row",
-            key="urg_table_selection_consulta"
+        urg_field = next((f for f, col in column_map.items() if col == "URG" or col == ("URG", "")), None)
+
+        pre_selected_rows = []
+        if urg_field and current_selected_urgs:
+            pre_selected_rows = [idx for idx, val in enumerate(df_cmp_urg_body[urg_field].tolist()) if val in current_selected_urgs]
+
+        # Sincronização JS para seleção mestre
+        selected_urgs_js = json.dumps(list(map(str, current_selected_urgs)))
+        urg_field_js = json.dumps(urg_field)
+        sync_selection_js = JsCode(f"""
+            function(params) {{
+                const selectedUrgs = new Set({selected_urgs_js});
+                const urgField = {urg_field_js};
+                if (!params.api || !urgField) return;
+                params.api.forEachNode(function(node) {{
+                    const rowUrg = node.data ? String(node.data[urgField] || '') : '';
+                    node.setSelected(selectedUrgs.has(rowUrg));
+                }});
+            }}
+        """)
+
+        grid_options = {
+            "columnDefs": column_defs,
+            "defaultColDef": {"resizable": True, "sortable": True, "filter": False, "suppressMenu": True},
+            "rowSelection": "multiple",
+            "rowMultiSelectWithClick": True,
+            "pinnedBottomRowData": footer_rows,
+            "onFirstDataRendered": sync_selection_js,
+            "onRowDataUpdated": sync_selection_js,
+        }
+        if pre_selected_rows:
+            grid_options["initialState"] = {"rowSelection": pre_selected_rows}
+
+        grid_height = calcular_altura_aggrid(df_cmp_urg_body, incluir_total=bool(footer_rows))
+
+        # Barra de ferramentas
+        df_cmp_urg_export = pd.concat([df_cmp_urg_body, pd.DataFrame(footer_rows)], ignore_index=True) if footer_rows else df_cmp_urg_body.copy()
+        render_table_toolbar(df_cmp_urg_export, "performance_urg_consulta.csv", "urg_table_consulta")
+
+        st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
+        aggrid_response = render_saedas_aggrid(
+            df_cmp_urg_body,
+            grid_options=grid_options,
+            key=f"urg_table_consulta_{hash(str(current_selected_urgs))}",
+            update_mode=GridUpdateMode.SELECTION_CHANGED,
+            incluir_total=bool(footer_rows)
         )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # Atualizar estado global com a seleção da tabela
+        selected_rows = aggrid_response.get("selected_rows", None)
+        if selected_rows is not None and urg_field:
+            if isinstance(selected_rows, pd.DataFrame):
+                selected_rows = selected_rows.to_dict(orient="records")
+            elif isinstance(selected_rows, dict):
+                selected_rows = [selected_rows]
+            
+            new_selected_urgs = [row.get(urg_field) for row in selected_rows if row.get(urg_field) and row.get(urg_field) != "TOTAL"]
+            if set(new_selected_urgs) != set(current_selected_urgs):
+                st.session_state["global_urgs"] = new_selected_urgs
+                st.rerun()
     else:
         st.info("Dados insuficientes para gerar a tabela de performance.")
     
@@ -580,24 +455,45 @@ def page_consulta():
         "Encaminhamento"
     )
 
-    st.markdown("---")
+    render_section_divider()
 
     # --- PRIORIDADE 3 (BASE): GRÁFICO DE DISTRIBUIÇÃO POR URG ---
     st.subheader("Comparativo Anual de Encaminhamentos por URG")
     render_grouped_bar_anual(df_filt, "Quantidade", "", orientation="h")
-    st.markdown("---")
+    render_section_divider()
 
     # --- DISTRIBUIÇÃO POR REGULAÇÃO (GRÁFICO AGRUPADO) ---
     st.subheader("Distribuição por Regulação")
     render_grouped_bar_anual(df_filt, "Quantidade", "", x_col="Encaminhamento", orientation="h")
     
     st.markdown("### Tabela Comparativa de Consultas por Ano")
-    df_cmp_regulacao = build_comparativo_anual(df_filt, "Encaminhamento")
+    df_cmp_regulacao = build_comparativo_anual(df_filt, "Encaminhamento", pct_label="Cobertura")
     if df_cmp_regulacao is not None:
-        st.dataframe(df_cmp_regulacao, use_container_width=True, hide_index=True)
-        st.caption("Nota: As colunas '% Total' representam o percentual de representatividade do Encaminhamento sobre o total realizado.")
+        df_reg_aggrid, reg_column_defs, _ = prepare_comparativo_aggrid_data(df_cmp_regulacao, include_selection_column=False)
+        df_reg_body, reg_footer = split_aggrid_footer(df_reg_aggrid)
+        
+        reg_grid_options = {
+            "columnDefs": reg_column_defs,
+            "defaultColDef": {"resizable": True, "sortable": True, "filter": False, "suppressMenu": True},
+            "pinnedBottomRowData": reg_footer,
+        }
+        reg_grid_height = calcular_altura_aggrid(df_reg_body, incluir_total=bool(reg_footer))
 
-    st.markdown("---")
+        # Barra de ferramentas
+        df_reg_export = pd.concat([df_reg_body, pd.DataFrame(reg_footer)], ignore_index=True) if reg_footer else df_reg_body.copy()
+        render_table_toolbar(df_reg_export, "comparativo_regulacao_consulta.csv", "reg_table_consulta")
+
+        st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
+        render_saedas_aggrid(
+            df_reg_body,
+            grid_options=reg_grid_options,
+            key="reg_table_consulta_aggrid",
+            incluir_total=bool(reg_footer)
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.caption("Nota: As colunas '% Cobertura' representam o percentual de representatividade do Encaminhamento sobre o total realizado.")
+
+    render_section_divider()
     st.subheader("Detalhamento por Aluno (ConsultaAluno)")
     if df_aluno.empty:
         st.info(
@@ -760,48 +656,62 @@ def page_consulta():
             preview_limit = 500
             df_aluno_head = df_aluno_final.head(preview_limit).reset_index(drop=True)
 
-            hover_styles_aluno = [
-                {"selector": "thead th", "props": [("text-align", "center"), ("background-color", "#161c26"), ("font-weight", "bold")]},
-                {"selector": "thead tr:first-child th", "props": [("border-bottom", "2px solid rgba(255, 255, 255, 0.2)"), ("background-color", "#12171f")]},
-                {"selector": "tbody tr:hover td", "props": [("background-color", "#374151 !important")]},
-                {"selector": "tbody tr:hover th", "props": [("background-color", "#374151 !important")]},
-            ]
+            style_fn_aluno = build_row_style_fn("Aluno")
+            hover_styles_aluno = get_table_hover_styles()
 
-            def _zebra_aluno(row):
-                bg = "#1e2530" if row.name % 2 == 0 else "#161c26"
-                style = f"background-color: {bg}; border: 1px solid rgba(255, 255, 255, 0.05);"
-                return [style] * len(row)
+            if not df_aluno_head.empty:
+                gb = GridOptionsBuilder.from_dataframe(df_aluno_head)
+                gb.configure_default_column(resizable=True, sortable=True, filter=False, suppressMenu=True)
+                gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=15)
+                
+                # Configura link de perfil via JsCode
+                gb.configure_column(
+                    "Menu",
+                    headerName="Perfil",
+                    cellRenderer=JsCode("""
+                        function(params) {
+                            if (!params.value) return '';
+                            return '<a href="' + params.value + '" target="_self" style="text-decoration:none; color:#2e7d32; font-weight:bold;">📄 Ver Perfil</a>';
+                        }
+                    """),
+                    width=100,
+                    pinned="right"
+                )
 
-            styled_aluno = (
-                df_aluno_head.style
-                .apply(_zebra_aluno, axis=1)
-                .set_properties(**{"text-align": "left"})
-                .set_table_styles(hover_styles_aluno)
-                .hide(axis="index")
-            )
+                # Adiciona índice numerado de 1 a N
+                gb.configure_column(
+                    "",
+                    headerName="",
+                    valueGetter="node.rowIndex + 1",
+                    pinned="left",
+                    width=60,
+                    maxWidth=60,
+                    lockPinned=True,
+                    cellStyle={"textAlign": "center", "fontWeight": "bold"}
+                )
+                
+                grid_options = gb.build()
+                grid_height = calcular_altura_aggrid(df_aluno_head, limite_linhas=15)
 
-            st.dataframe(
-                styled_aluno,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Menu": st.column_config.LinkColumn(
-                        "Menu", display_text="Perfil"
-                    )
-                },
-            )
+                # Barra de ferramentas
+                render_table_toolbar(df_aluno_head, "detalhes_alunos_consulta.csv", "aluno_table_consulta")
+
+                st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
+                render_saedas_aggrid(
+                    df_aluno_head,
+                    grid_options=grid_options,
+                    key="aluno_table_consulta_aggrid",
+                    max_rows=15
+                )
+                st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                st.info("Nenhum registro detalhado para exibir.")
+            
+            # Remover o download_button manual que existia no final
             if total_registros_aluno > preview_limit:
                 st.info(
                     f"Exibindo apenas as primeiras {preview_limit} linhas de {total_registros_aluno}."
                 )
-
-            csv_aluno = df_aluno_filtrado.to_csv(index=False, sep=";").encode("utf-8")
-            st.download_button(
-                label="Exportar CSV (Consulta por aluno)",
-                data=csv_aluno,
-                file_name="dados_filtrados_consulta_aluno.csv",
-                mime="text/csv",
-            )
 
     st.markdown(" ")
     footer_personal()

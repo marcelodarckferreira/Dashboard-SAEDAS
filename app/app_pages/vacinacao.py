@@ -16,8 +16,6 @@ from app.utils.page_helpers import (
     format_filters_applied,
     render_grouped_bar_anual,
     toggle_multiselect_value,
-    should_use_native_regulacao_button,
-    get_native_regulacao_button_type,
 )
 from app.utils.state_manager import init_global_state, sync_home_to_sidebar, sync_home_urg_to_sidebar
 from app.utils.schemas import (
@@ -25,7 +23,7 @@ from app.utils.schemas import (
     SCHEMA_VACINACAO_ALUNO,
     SCHEMA_VACINACAO_ANO,
 )
-from app.utils.styles import apply_global_css, render_metric_cards, style_urg_performance_table
+from app.utils.styles import apply_global_css, render_metric_cards, apply_saedas_design
 
 
 def carregar_dados_vacinacao():
@@ -51,148 +49,18 @@ def page_vacinacao():
     # Inicializa o estado global sincronizado (Anos e URGs)
     init_global_state()
 
-    # --- LÓGICA DE TOGGLE PARA VACINAÇÃO ---
     def toggle_vacinacao(vac_name):
         current = st.session_state.get("vacinacao_vacina_multiselect", [])
         st.session_state["vacinacao_vacina_multiselect"] = (
             toggle_multiselect_value(current, vac_name)
         )
 
-    st.markdown(
-        """
-        <style>
-            .consulta-metric-card {
-                background: linear-gradient(135deg, #0f172a, #1f2937);
-                border: 1px solid rgba(255,255,255,0.08);
-                border-radius: 12px;
-                padding: 12px 14px;
-                box-shadow: 0 4px 18px rgba(0,0,0,0.18);
-                color: #e5e7eb;
-                display: flex;
-                flex-direction: column;
-                gap: 4px;
-                height: 100%;
-                transition: all 0.3s ease;
-                position: relative;
-                z-index: 1;
-                pointer-events: none !important;
-            }
-
-            .consulta-metric-label {
-                font-size: 0.8rem;
-                letter-spacing: 0.02em;
-                color: #cbd5e1;
-            }
-
-            .consulta-metric-value {
-                font-size: 1.6rem;
-                font-weight: 700;
-                color: #f8fafc;
-                line-height: 1.2;
-            }
-
-            /* =========================================================
-               Streamlit Native Button as KPI Card
-               ========================================================= */
-
-            [data-testid="stButton"] button[kind="primary"],
-            [data-testid="stButton"] button[kind="tertiary"] {
-                width: 100% !important;
-                height: 101px !important;
-                min-height: 101px !important;
-                border-radius: 13px !important;
-                padding: 0 !important;
-                display: flex !important;
-                flex-direction: column !important;
-                align-items: flex-start !important;
-                justify-content: center !important;
-                gap: 10px !important;
-                text-align: left !important;
-                line-height: 1 !important;
-                overflow: hidden !important;
-                color: #f8fafc !important;
-                background: #172238 !important;
-                box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22) !important;
-                transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease !important;
-            }
-
-            [data-testid="stButton"] button[kind="primary"]:focus,
-            [data-testid="stButton"] button[kind="tertiary"]:focus,
-            [data-testid="stButton"] button[kind="primary"]:focus-visible,
-            [data-testid="stButton"] button[kind="tertiary"]:focus-visible {
-                outline: none !important;
-            }
-
-            [data-testid="stButton"] button[kind="primary"] *,
-            [data-testid="stButton"] button[kind="tertiary"] * {
-                text-align: left !important;
-                align-self: flex-start !important;
-            }
-
-            [data-testid="stButton"] button[kind="primary"] p,
-            [data-testid="stButton"] button[kind="tertiary"] p {
-                width: 100% !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                color: #dbeafe !important;
-                font-size: 0.78rem !important;
-                font-weight: 600 !important;
-                letter-spacing: 0.055em !important;
-                line-height: 1.05 !important;
-                text-transform: uppercase !important;
-                pointer-events: none !important;
-            }
-
-            [data-testid="stButton"] button[kind="primary"] strong,
-            [data-testid="stButton"] button[kind="tertiary"] strong {
-                display: block !important;
-                width: 100% !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                color: #ffffff !important;
-                font-size: 1.72rem !important;
-                font-weight: 800 !important;
-                line-height: 1 !important;
-                letter-spacing: -0.04em !important;
-                text-align: left !important;
-                pointer-events: none !important;
-            }
-
-            [data-testid="stButton"] button[kind="primary"] {
-                border: 1px solid #3b82f6 !important;
-                background: linear-gradient(135deg, #1e3a8a, #0f172a) !important;
-                box-shadow: 0 0 15px rgba(59, 130, 246, 0.4) !important;
-            }
-
-            [data-testid="stButton"] button[kind="tertiary"] {
-                border: 1px solid rgba(148, 163, 184, 0.16) !important;
-                background: #172238 !important;
-                box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22) !important;
-            }
-
-            [data-testid="stButton"] button[kind="primary"]:hover,
-            [data-testid="stButton"] button[kind="tertiary"]:hover {
-                transform: translateY(-1px) !important;
-                border-color: rgba(96, 165, 250, 0.55) !important;
-                background: #1a2942 !important;
-                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.26) !important;
-            }
-
-            [data-testid="stButton"] button[kind="primary"]:active,
-            [data-testid="stButton"] button[kind="tertiary"]:active {
-                transform: translateY(0) !important;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
     st.title("Visão Geral da Vacinação")
     st.markdown(
         "Resumo consolidado das ações realizadas por ano, URG e equipe técnica."
     )
     filters_placeholder = st.empty()
-    apply_global_css()
+    # apply_global_css() — Já injetado no app.py
     datasets = carregar_dados_vacinacao()
 
     df, info = datasets["principal"]["df"], datasets["principal"]["info"]
@@ -315,7 +183,6 @@ def page_vacinacao():
     vacinas_selecionadas = st.sidebar.multiselect(
         "Selecione a(s) Vacina(s):",
         options=vacinas_disponiveis,
-        default=[],
         placeholder="Todas",
         key="vacinacao_vacina_multiselect"
     )
@@ -364,6 +231,30 @@ def page_vacinacao():
 
     selections["vacina"] = list(set(selections.get("vacina", []) + vacinas_selecionadas)) or vacinas_disponiveis
 
+    # --- Geração do filtro_titulo Dinâmico (Data-Driven UI) ---
+    def get_filter_display_string_for_title(selected_items_list, all_available_items_list):
+        if not selected_items_list or (all_available_items_list and set(map(str, selected_items_list)) == set(map(str, all_available_items_list))):
+            return "Todos"
+        return ", ".join(map(str, sorted(list(set(selected_items_list)))))
+
+    all_urgs_for_title = sorted(list(df["URG"].dropna().unique()))
+    all_years_for_title = sorted(list(df["Ano"].dropna().unique())) if "Ano" in df.columns else []
+    all_escolas_for_title = sorted(list(df["Escola"].dropna().unique()))
+    all_vacs_for_title = sorted(list(df["Vacina"].dropna().unique()))
+    
+    current_urgs_for_title = st.session_state["global_urgs"] if st.session_state["global_urgs"] else all_urgs_for_title
+    current_escolas_for_title = selections.get("escola", [])
+    current_vacs_for_title = vacinas_selecionadas if vacinas_selecionadas else all_vacs_for_title
+    
+    anos_str = get_filter_display_string_for_title(selected_years_comp, all_years_for_title)
+    urgs_str = get_filter_display_string_for_title(current_urgs_for_title, all_urgs_for_title)
+    escolas_str = get_filter_display_string_for_title(current_escolas_for_title, all_escolas_for_title)
+    vacs_str = get_filter_display_string_for_title(current_vacs_for_title, all_vacs_for_title)
+    
+    filtro_titulo = f"Anos: {anos_str} / URGs: {urgs_str} / Escolas: {escolas_str} / Vacinas: {vacs_str}"
+
+    st.markdown(f"### Indicadores Gerais ({filtro_titulo})")
+    
     filters_placeholder.markdown(
         "**Filtros aplicados:** "
         + format_filters_applied(
@@ -404,40 +295,23 @@ def page_vacinacao():
     vacinas_sum = vacinas_sum[vacinas_sum > 0]
     
     if not vacinas_sum.empty:
-        # Preparamos os itens de vacina (nome, valor, is_active)
-        for start in range(0, len(vacinas_sum), 5):
-            slice_vac = vacinas_sum.iloc[start : start + 5]
-            cols = st.columns(5)
-            for col, (nome, valor) in zip(cols, slice_vac.items()):
-                nome_str = str(nome)
-                # Verifica se está ativo no filtro da sidebar
-                is_active = nome_str in vacinas_selecionadas
-                valor_fmt = f"{int(valor):,}".replace(",", ".")
-
-                with col:
-                    if should_use_native_regulacao_button(nome_str):
-                        st.button(
-                            f"{nome_str.upper()}\n\n**{valor_fmt}**",
-                            key=f"btn_vac_{nome_str}",
-                            on_click=toggle_vacinacao,
-                            args=(nome_str,),
-                            help=f"Marcar/desmarcar {nome_str.upper()} no filtro de vacinação",
-                            type=get_native_regulacao_button_type(
-                                nome_str, vacinas_selecionadas
-                            ),
-                            use_container_width=True,
-                        )
-                        continue
-                    
-                    # Fallback
-                    card_class = "consulta-metric-card consulta-metric-card-active" if is_active else "consulta-metric-card"
-                    st.markdown(
-                        f'<div class="{card_class}">'
-                        f'<div class="consulta-metric-label">{nome_str.upper()}</div>'
-                        f'<div class="consulta-metric-value">{valor_fmt}</div>'
-                        "</div>",
-                        unsafe_allow_html=True
-                    )
+        # Preparamos os itens para o render_metric_cards em modo toggle
+        kpi_metrics = []
+        for nome, valor in vacinas_sum.items():
+            kpi_metrics.append({
+                "label": str(nome).upper(),
+                "value": valor
+            })
+        
+        # Renderiza em blocos de 5 para manter o grid elegante
+        for i in range(0, len(kpi_metrics), 5):
+            chunk = kpi_metrics[i : i + 5]
+            render_metric_cards(
+                chunk, 
+                is_toggle=True, 
+                active_labels=[l.upper() for l in vacinas_selecionadas],
+                on_click_callback=toggle_vacinacao
+            )
     else:
         st.info("Selecione ao menos um ano para visualizar os indicadores.")
     
@@ -492,14 +366,17 @@ def page_vacinacao():
                 st.session_state["urg_table_selection_vacinacao"] = {"selection": {"rows": target_indices, "columns": []}}
         except Exception: pass
 
-        st.dataframe(
-            style_urg_performance_table(df_cmp_urg, current_selected_urgs),
-            use_container_width=True,
-            hide_index=True,
-            on_select=sync_urg_table_to_global_vacinacao,
-            selection_mode="multi-row",
-            key="urg_table_selection_vacinacao"
-        )
+        with st.container():
+            st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
+            st.dataframe(
+                apply_saedas_design(df_cmp_urg, "URG", current_selected_urgs),
+                width="stretch",
+                hide_index=True,
+                on_select=sync_urg_table_to_global_vacinacao,
+                selection_mode="multi-row",
+                key="urg_table_selection_vacinacao"
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("Dados insuficientes para gerar a tabela de performance.")
     
@@ -533,7 +410,10 @@ def page_vacinacao():
     st.markdown("### Tabela Comparativa de Vacinação por Ano")
     df_cmp_vacina = build_comparativo_anual(df_filt, "Vacina")
     if df_cmp_vacina is not None:
-        st.dataframe(df_cmp_vacina, use_container_width=True, hide_index=True)
+        with st.container():
+            st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
+            st.dataframe(df_cmp_vacina, width="stretch", hide_index=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         st.caption("Nota: As colunas '% Total' representam o percentual de representatividade da Vacina sobre o total realizado no respectivo ano.")
 
 
@@ -693,29 +573,15 @@ def page_vacinacao():
             preview_limit = 500
             df_aluno_head = df_aluno_final.head(preview_limit).reset_index(drop=True)
 
-            hover_styles_aluno = [
-                {"selector": "thead th", "props": [("text-align", "center"), ("background-color", "#161c26"), ("font-weight", "bold")]},
-                {"selector": "thead tr:first-child th", "props": [("border-bottom", "2px solid rgba(255, 255, 255, 0.2)"), ("background-color", "#12171f")]},
-                {"selector": "tbody tr:hover td", "props": [("background-color", "#374151 !important")]},
-                {"selector": "tbody tr:hover th", "props": [("background-color", "#374151 !important")]},
-            ]
-
-            def _zebra_aluno(row):
-                bg = "#1e2530" if row.name % 2 == 0 else "#161c26"
-                style = f"background-color: {bg}; border: 1px solid rgba(255, 255, 255, 0.05);"
-                return [style] * len(row)
-
             styled_aluno = (
-                df_aluno_head.style
-                .apply(_zebra_aluno, axis=1)
+                df_aluno_head.style.pipe(apply_saedas_design, categoria_col="Aluno")
                 .set_properties(**{"text-align": "left"})
-                .set_table_styles(hover_styles_aluno)
                 .hide(axis="index")
             )
 
             st.dataframe(
                 styled_aluno,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "Menu": st.column_config.LinkColumn(

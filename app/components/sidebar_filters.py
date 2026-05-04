@@ -129,7 +129,6 @@ def sidebar_filters(df, filter_config):
         escolas_selecionadas_usr = st.sidebar.multiselect(
             "Selecione a(s) Escola(s):",
             options=escolas_disponiveis,
-            default=[],
             placeholder="Todas as Escolas",
             key="sidebar_escola_filter"
         )
@@ -154,7 +153,6 @@ def sidebar_filters(df, filter_config):
             tipos_selecionados_usr = st.sidebar.multiselect(
                 "Selecione o(s) Tipo(s):",
                 options=tipos_disponiveis_geral,
-                default=[],
                 placeholder="Todos",
                 key="sidebar_tipo_filter"
             )

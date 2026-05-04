@@ -16,12 +16,10 @@ from app.utils.page_helpers import (
     format_filters_applied,
     render_grouped_bar_anual,
     toggle_multiselect_value,
-    should_use_native_regulacao_button,
-    get_native_regulacao_button_type,
 )
 from app.utils.state_manager import init_global_state, sync_home_to_sidebar, sync_home_urg_to_sidebar
 from app.utils.schemas import SCHEMA_EXAME, SCHEMA_EXAME_ALUNO, SCHEMA_EXAME_ANO
-from app.utils.styles import apply_global_css, render_metric_cards, style_urg_performance_table
+from app.utils.styles import apply_global_css, render_metric_cards, apply_saedas_design, build_row_style_fn, get_table_hover_styles
 
 
 def carregar_dados_exame():
@@ -54,157 +52,12 @@ def page_exame():
             toggle_multiselect_value(current, reg_name)
         )
 
-    st.markdown(
-        """
-        <style>
-            .consulta-metric-card {
-                background: linear-gradient(135deg, #0f172a, #1f2937);
-                border: 1px solid rgba(255,255,255,0.08);
-                border-radius: 12px;
-                padding: 12px 14px;
-                box-shadow: 0 4px 18px rgba(0,0,0,0.18);
-                color: #e5e7eb;
-                display: flex;
-                flex-direction: column;
-                gap: 4px;
-                height: 100%;
-                transition: all 0.3s ease;
-                position: relative;
-                z-index: 1;
-                pointer-events: none !important;
-            }
-
-            .consulta-metric-label {
-                font-size: 0.8rem;
-                letter-spacing: 0.02em;
-                color: #cbd5e1;
-            }
-
-            .consulta-metric-value {
-                font-size: 1.6rem;
-                font-weight: 700;
-                color: #f8fafc;
-                line-height: 1.2;
-            }
-
-            /* =========================================================
-               Streamlit Native Button as KPI Card
-               Ajustado para o desenho enviado: menos espaço interno e texto à esquerda
-               ========================================================= */
-
-            /* Botão/Card */
-            [data-testid="stButton"] button[kind="primary"],
-            [data-testid="stButton"] button[kind="tertiary"] {
-                width: 100% !important;
-                height: 101px !important;
-                min-height: 101px !important;
-                border-radius: 13px !important;
-
-                /* Reduz o espaço interno do card */
-                padding: 0 !important;
-
-                display: flex !important;
-                flex-direction: column !important;
-                align-items: flex-start !important;
-                justify-content: center !important;
-
-                /* Espaço entre o título e o número */
-                gap: 10px !important;
-
-                text-align: left !important;
-                line-height: 1 !important;
-                overflow: hidden !important;
-                color: #f8fafc !important;
-                background: #172238 !important;
-                box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22) !important;
-                transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease, background 0.2s ease !important;
-            }
-
-            /* Remove aparência nativa de foco do Streamlit */
-            [data-testid="stButton"] button[kind="primary"]:focus,
-            [data-testid="stButton"] button[kind="tertiary"]:focus,
-            [data-testid="stButton"] button[kind="primary"]:focus-visible,
-            [data-testid="stButton"] button[kind="tertiary"]:focus-visible {
-                outline: none !important;
-            }
-
-            /* Força todos os elementos internos para a esquerda */
-            [data-testid="stButton"] button[kind="primary"] *,
-            [data-testid="stButton"] button[kind="tertiary"] * {
-                text-align: left !important;
-                align-self: flex-start !important;
-            }
-
-            /* Texto/Título */
-            [data-testid="stButton"] button[kind="primary"] p,
-            [data-testid="stButton"] button[kind="tertiary"] p {
-                width: 100% !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                color: #dbeafe !important;
-                font-size: 0.78rem !important;
-                font-weight: 600 !important;
-                letter-spacing: 0.055em !important;
-                line-height: 1.05 !important;
-                text-transform: uppercase !important;
-                pointer-events: none !important;
-            }
-
-            /* Valor */
-            [data-testid="stButton"] button[kind="primary"] strong,
-            [data-testid="stButton"] button[kind="tertiary"] strong {
-                display: block !important;
-                width: 100% !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                color: #ffffff !important;
-                font-size: 1.72rem !important;
-                font-weight: 800 !important;
-                line-height: 1 !important;
-                letter-spacing: -0.04em !important;
-                text-align: left !important;
-                pointer-events: none !important;
-            }
-
-            /* Estado ATIVO */
-            [data-testid="stButton"] button[kind="primary"] {
-                border: 1px solid #3b82f6 !important;
-                background: linear-gradient(135deg, #1e3a8a, #0f172a) !important;
-                box-shadow: 0 0 15px rgba(59, 130, 246, 0.4) !important;
-            }
-
-            /* Estado INATIVO */
-            [data-testid="stButton"] button[kind="tertiary"] {
-                border: 1px solid rgba(148, 163, 184, 0.16) !important;
-                background: #172238 !important;
-                box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22) !important;
-            }
-
-            /* Hover discreto */
-            [data-testid="stButton"] button[kind="primary"]:hover,
-            [data-testid="stButton"] button[kind="tertiary"]:hover {
-                transform: translateY(-1px) !important;
-                border-color: rgba(96, 165, 250, 0.55) !important;
-                background: #1a2942 !important;
-                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.26) !important;
-            }
-
-            /* Clique */
-            [data-testid="stButton"] button[kind="primary"]:active,
-            [data-testid="stButton"] button[kind="tertiary"]:active {
-                transform: translateY(0) !important;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
     st.title("Visão Geral dos Exames (Regulação)")
     st.markdown(
         "Resumo consolidado das ações realizadas por ano, URG e equipe técnica."
     )
     filters_placeholder = st.empty()
-    apply_global_css()
+    # apply_global_css() — Já injetado no app.py
 
     datasets = carregar_dados_exame()
 
@@ -274,7 +127,6 @@ def page_exame():
     regulacoes_selecionadas = st.sidebar.multiselect(
         "Selecione a(s) Regulação(ões):",
         options=regulacoes_disponiveis,
-        default=[],
         placeholder="Todas",
         key="exame_regulacao_multiselect"
     )
@@ -376,6 +228,30 @@ def page_exame():
 
     selections["regulacao"] = list(set(selections.get("regulacao", []) + regulacoes_selecionadas)) or regulacoes_disponiveis
 
+    # --- Geração do filtro_titulo Dinâmico (Data-Driven UI) ---
+    def get_filter_display_string_for_title(selected_items_list, all_available_items_list):
+        if not selected_items_list or (all_available_items_list and set(map(str, selected_items_list)) == set(map(str, all_available_items_list))):
+            return "Todos"
+        return ", ".join(map(str, sorted(list(set(selected_items_list)))))
+
+    all_urgs_for_title = sorted(list(df["URG"].dropna().unique()))
+    all_years_for_title = sorted(list(df["Ano"].dropna().unique())) if "Ano" in df.columns else []
+    all_escolas_for_title = sorted(list(df["Escola"].dropna().unique()))
+    all_regs_for_title = sorted(list(df["Regulacao"].dropna().unique()))
+    
+    current_urgs_for_title = st.session_state["global_urgs"] if st.session_state["global_urgs"] else all_urgs_for_title
+    current_escolas_for_title = selections.get("escola", [])
+    current_regs_for_title = regulacoes_selecionadas if regulacoes_selecionadas else all_regs_for_title
+    
+    anos_str = get_filter_display_string_for_title(selected_years_comp, all_years_for_title)
+    urgs_str = get_filter_display_string_for_title(current_urgs_for_title, all_urgs_for_title)
+    escolas_str = get_filter_display_string_for_title(current_escolas_for_title, all_escolas_for_title)
+    regs_str = get_filter_display_string_for_title(current_regs_for_title, all_regs_for_title)
+    
+    filtro_titulo = f"Anos: {anos_str} / URGs: {urgs_str} / Escolas: {escolas_str} / Regulações: {regs_str}"
+
+    st.markdown(f"### Indicadores Gerais ({filtro_titulo})")
+    
     filters_placeholder.markdown(
         "**Filtros aplicados:** "
         + format_filters_applied(
@@ -404,8 +280,9 @@ def page_exame():
     
     # 1. Indicador principal (Total Geral)
     total_qtd = df_filt["Quantidade"].sum() if not df_filt.empty else 0
-    render_metric("TOTAL DE REGULAÇÕES (EXAMES)", total_qtd)
-    st.markdown(" ")
+    render_metric_cards([{"label": "TOTAL DE REGULAÇÕES (EXAMES)", "value": total_qtd}])
+    
+    render_section_divider()
     
     # Sumário por Regulação - IMUNIDADE AO FILTRO DE REGULAÇÃO
     regulacoes_sum = (
@@ -416,40 +293,23 @@ def page_exame():
     regulacoes_sum = regulacoes_sum[regulacoes_sum > 0]
     
     if not regulacoes_sum.empty:
-        # Preparamos os itens de regulação (nome, valor, is_active)
-        for start in range(0, len(regulacoes_sum), 5):
-            slice_reg = regulacoes_sum.iloc[start : start + 5]
-            cols = st.columns(5)
-            for col, (nome, valor) in zip(cols, slice_reg.items()):
-                nome_str = str(nome)
-                # Verifica se está ativo no filtro da sidebar
-                is_active = nome_str in regulacoes_selecionadas
-                valor_fmt = f"{int(valor):,}".replace(",", ".")
-
-                with col:
-                    if should_use_native_regulacao_button(nome_str):
-                        st.button(
-                            f"{nome_str.upper()}\n\n**{valor_fmt}**",
-                            key=f"btn_reg_exame_{nome_str}",
-                            on_click=toggle_regulacao,
-                            args=(nome_str,),
-                            help=f"Marcar/desmarcar {nome_str.upper()} no filtro de regulação",
-                            type=get_native_regulacao_button_type(
-                                nome_str, regulacoes_selecionadas
-                            ),
-                            use_container_width=True,
-                        )
-                        continue
-                    
-                    # Fallback (caso o helper retorne False, o que não deve ocorrer agora)
-                    card_class = "consulta-metric-card consulta-metric-card-active" if is_active else "consulta-metric-card"
-                    st.markdown(
-                        f'<div class="{card_class}">'
-                        f'<div class="consulta-metric-label">{nome_str.upper()}</div>'
-                        f'<div class="consulta-metric-value">{valor_fmt}</div>'
-                        "</div>",
-                        unsafe_allow_html=True
-                    )
+        # Preparamos os itens para o render_metric_cards em modo toggle
+        kpi_metrics = []
+        for nome, valor in regulacoes_sum.items():
+            kpi_metrics.append({
+                "label": str(nome).upper(),
+                "value": valor
+            })
+        
+        # Renderiza em blocos de 5 para manter o grid elegante
+        for i in range(0, len(kpi_metrics), 5):
+            chunk = kpi_metrics[i : i + 5]
+            render_metric_cards(
+                chunk, 
+                is_toggle=True, 
+                active_labels=[l.upper() for l in regulacoes_selecionadas],
+                on_click_callback=toggle_regulacao
+            )
     else:
         st.info("Selecione ao menos um ano para visualizar os indicadores.")
     
@@ -504,14 +364,17 @@ def page_exame():
                 st.session_state["urg_table_selection_exame"] = {"selection": {"rows": target_indices, "columns": []}}
         except Exception: pass
 
-        st.dataframe(
-            style_urg_performance_table(df_cmp_urg, current_selected_urgs),
-            use_container_width=True,
-            hide_index=True,
-            on_select=sync_urg_table_to_global_exame,
-            selection_mode="multi-row",
-            key="urg_table_selection_exame"
-        )
+        with st.container():
+            st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
+            st.dataframe(
+                apply_saedas_design(df_cmp_urg, "URG", current_selected_urgs),
+                width="stretch",
+                hide_index=True,
+                on_select=sync_urg_table_to_global_exame,
+                selection_mode="multi-row",
+                key="urg_table_selection_exame"
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("Dados insuficientes para gerar a tabela de performance.")
     
@@ -545,7 +408,10 @@ def page_exame():
     st.markdown("### Tabela Comparativa de Exames por Ano")
     df_cmp_regulacao = build_comparativo_anual(df_filt, "Regulacao")
     if df_cmp_regulacao is not None:
-        st.dataframe(df_cmp_regulacao, use_container_width=True, hide_index=True)
+        with st.container():
+            st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
+            st.dataframe(df_cmp_regulacao, width="stretch", hide_index=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         st.caption("Nota: As colunas '% Total' representam o percentual de representatividade da Regulação sobre o total realizado no respectivo ano.")
 
 
@@ -707,21 +573,12 @@ def page_exame():
             preview_limit = 500
             df_aluno_head = df_aluno_final.head(preview_limit).reset_index(drop=True)
 
-            hover_styles_aluno = [
-                {"selector": "thead th", "props": [("text-align", "center"), ("background-color", "#161c26"), ("font-weight", "bold")]},
-                {"selector": "thead tr:first-child th", "props": [("border-bottom", "2px solid rgba(255, 255, 255, 0.2)"), ("background-color", "#12171f")]},
-                {"selector": "tbody tr:hover td", "props": [("background-color", "#374151 !important")]},
-                {"selector": "tbody tr:hover th", "props": [("background-color", "#374151 !important")]},
-            ]
-
-            def _zebra_aluno(row):
-                bg = "#1e2530" if row.name % 2 == 0 else "#161c26"
-                style = f"background-color: {bg}; border: 1px solid rgba(255, 255, 255, 0.05);"
-                return [style] * len(row)
+            style_fn_aluno = build_row_style_fn("Aluno")
+            hover_styles_aluno = get_table_hover_styles()
 
             styled_aluno = (
                 df_aluno_head.style
-                .apply(_zebra_aluno, axis=1)
+                .apply(style_fn_aluno, axis=1)
                 .set_properties(**{"text-align": "left"})
                 .set_table_styles(hover_styles_aluno)
                 .hide(axis="index")
@@ -729,7 +586,7 @@ def page_exame():
 
             st.dataframe(
                 styled_aluno,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "Menu": st.column_config.LinkColumn(

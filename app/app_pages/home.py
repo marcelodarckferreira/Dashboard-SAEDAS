@@ -8,7 +8,15 @@ from components.footer_personal import footer_personal
 from components.sidebar_filters import sidebar_filters
 import numpy as np
 from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, JsCode
-from app.utils.page_helpers import format_filters_applied, build_comparativo_anual
+from app.utils.page_helpers import (
+    format_filters_applied, 
+    build_comparativo_anual,
+    calcular_altura_aggrid,
+    prepare_comparativo_aggrid_data,
+    split_aggrid_footer,
+    render_table_toolbar,
+    render_saedas_aggrid
+)
 from app.utils.state_manager import init_global_state, sync_home_to_sidebar
 from app.utils.data_loader import load_csv
 from app.utils.schemas import (
@@ -17,7 +25,7 @@ from app.utils.schemas import (
     SCHEMA_HOME_ESCOLA_ANO,
     SCHEMA_HOME_URG_ANO,
 )
-from app.utils.styles import apply_global_css, apply_saedas_design
+from app.utils.styles import apply_global_css, apply_saedas_design, render_metric_cards
 
 AUTO_ID_COLUMN = "::auto_unique_id::"
 
@@ -60,160 +68,7 @@ def carregar_dados_home():
     }
 
 
-def calcular_altura_aggrid(
-    df: pd.DataFrame, limite_linhas: int | str | None, incluir_total: bool = False
-) -> int:
-    """
-    Calcula a altura ideal para uma tabela AgGrid com base no número de linhas.
-    Args:
-        df (pd.DataFrame): O DataFrame que será exibido.
-        limite_linhas (int | str | None): O limite de linhas selecionado pelo usuário.
-                                          Pode ser um inteiro, "Todas as linhas", ou None.
-        incluir_total (bool): Se uma linha de total fixada (pinned) será adicionada.
-    Returns:
-        int: A altura calculada em pixels para a grade.
-    """
 
-    APPROX_ROW_HEIGHT = 34
-
-    APPROX_HEADER_HEIGHT = 36
-
-    SAFETY_PADDING = 6  # Espaço extra para evitar barras de rolagem desnecessárias
-
-    if not isinstance(df, pd.DataFrame):
-        return APPROX_HEADER_HEIGHT + SAFETY_PADDING
-
-    num_data_rows = len(df)
-
-    if isinstance(limite_linhas, int) and limite_linhas > 0:
-        num_rows_to_display = min(num_data_rows, limite_linhas)
-
-    else:  # Inclui "Todas as linhas", None, ou qualquer outro valor não-inteiro
-        num_rows_to_display = num_data_rows
-
-    # A altura da área de dados
-
-    data_height = num_rows_to_display * APPROX_ROW_HEIGHT
-
-    # A linha de total é *adicionada* à altura total, pois fica em uma área separada
-
-    total_row_height = APPROX_ROW_HEIGHT if incluir_total and num_data_rows > 0 else 0
-
-    # Altura final
-
-    grid_height = APPROX_HEADER_HEIGHT + data_height + total_row_height + SAFETY_PADDING
-
-    # Define uma altura mínima para a tabela não "sumir" se estiver vazia
-
-    min_height = (
-        APPROX_HEADER_HEIGHT
-        + (APPROX_ROW_HEIGHT if incluir_total else 0)
-        + SAFETY_PADDING
-    )
-
-    return max(grid_height, min_height)
-
-
-def _prepare_comparativo_aggrid_data(
-    df_styler, include_selection_column: bool = True
-) -> tuple[pd.DataFrame, list[dict], dict]:
-    """Converte o Styler do comparativo anual em dados/colunas compatíveis com AgGrid."""
-    df_data = getattr(df_styler, "data", df_styler)
-    if df_data is None or df_data.empty:
-        return pd.DataFrame(), [], {}
-
-    df_grid = df_data.copy().reset_index(drop=True)
-    column_map = {}
-    grouped_columns = {}
-    flat_columns = []
-
-    for idx, col in enumerate(df_grid.columns):
-        if isinstance(col, tuple):
-            group_label = str(col[0] or "")
-            child_label = str(col[1] or "")
-            header_label = child_label or group_label
-        else:
-            group_label = ""
-            header_label = str(col)
-
-        field_name = f"col_{idx}"
-        column_map[field_name] = col
-        flat_columns.append(field_name)
-
-        col_def = {
-            "field": field_name,
-            "headerName": header_label,
-            "sortable": True,
-            "filter": False,
-            "resizable": True,
-        }
-        is_label_column = col in {
-            ("URG", ""),
-            "URG",
-            ("Escola", ""),
-            "Escola",
-            ("Descricao", ""),
-            "Descricao",
-        }
-        if not is_label_column:
-            col_def["cellStyle"] = {"textAlign": "center"}
-
-        if group_label and child_label:
-            grouped_columns.setdefault(group_label, []).append(col_def)
-        else:
-            grouped_columns.setdefault(field_name, []).append(
-                {
-                    **col_def,
-                    "headerName": header_label,
-                    "headerClass": "saedas-aggrid-header",
-                }
-            )
-
-    df_grid.columns = flat_columns
-    
-    column_defs = []
-    if include_selection_column:
-        column_defs.append(
-            {
-                "headerName": "",
-                "valueGetter": JsCode(
-                    "function(p){return p.node.rowPinned?'':p.node.rowIndex+1;}"
-                ),
-                "checkboxSelection": True,
-                "headerCheckboxSelection": False,
-                "width": 60,
-                "maxWidth": 60,
-                "pinned": "left",
-                "sortable": False,
-                "filter": False,
-                "resizable": False,
-                "suppressMenu": True,
-            }
-        )
-
-    for group_name, children in grouped_columns.items():
-        if group_name in flat_columns:
-            column_defs.extend(children)
-        else:
-            column_defs.append(
-                {
-                    "headerName": group_name,
-                    "headerClass": "saedas-aggrid-centered-header",
-                    "children": children,
-                }
-            )
-
-    return df_grid, column_defs, column_map
-
-
-def _split_aggrid_footer(df_grid: pd.DataFrame) -> tuple[pd.DataFrame, list[dict]]:
-    """Usa a última linha do DataFrame como rodapé fixo do AgGrid."""
-    if df_grid.empty:
-        return df_grid, []
-
-    footer_row = df_grid.tail(1).replace({np.nan: None}).to_dict(orient="records")
-    body_df = df_grid.iloc[:-1].copy().reset_index(drop=True)
-    return body_df, footer_row
 
 
 def page_home():
@@ -224,6 +79,216 @@ def page_home():
     
     # Injeta CSS Global
     apply_global_css()
+
+    # --- UNIFICAÇÃO DE ESTILOS (Design System Centralizado) ---
+    st.markdown(
+        """
+        <style>
+            /* 1. Cabeçalhos e Tipografia Global */
+            h3 {
+                color: #f1f5f9 !important;
+                font-weight: 800 !important;
+                margin-bottom: 1.5rem !important;
+                letter-spacing: -0.02em !important;
+            }
+
+            /* 2. Seletor de Ano (Segmented Control) */
+            .st-key-massive_year_selector {
+                margin-top: -1.5rem !important;
+                margin-bottom: 1rem !important;
+            }
+            .st-key-massive_year_selector button {
+                height: 56px !important;
+                min-width: 120px !important;
+                border-radius: 0 !important;
+                background-color: #1e293b !important;
+                border: 1px solid #334155 !important;
+                border-right: none !important;
+                transition: all 0.3s ease !important;
+                margin: 0 !important;
+            }
+            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:first-of-type button {
+                border-radius: 10px 0 0 10px !important;
+            }
+            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:last-of-type button {
+                border-radius: 0 10px 10px 0 !important;
+                border-right: 1px solid #334155 !important;
+            }
+
+            /* 3. KPI Cards (Design Premium com Borda Iluminada) */
+            .home-metric-card {
+                border-radius: 12px !important;
+                padding: 20px !important;
+                height: 100% !important;
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: center !important;
+                border: 1.5px solid transparent !important;
+                background-origin: border-box !important;
+                background-clip: padding-box, border-box !important;
+                transition: all 0.25s ease !important;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+            }
+            .metric-card-static {
+                background-image: linear-gradient(#0f172a, #0f172a), linear-gradient(135deg, #94a3b8 0%, #334155 100%) !important;
+            }
+            .home-metric-link {
+                background-image: linear-gradient(#0f172a, #0f172a), linear-gradient(135deg, #38bdf8 0%, #1e40af 100%) !important;
+                cursor: pointer !important;
+            }
+            .home-metric-link:hover {
+                transform: translateY(-3px) !important;
+                background-image: linear-gradient(#0f172a, #0f172a), linear-gradient(135deg, #7dd3fc 0%, #3b82f6 100%) !important;
+                box-shadow: 0 0 20px rgba(56, 189, 248, 0.3), 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+            }
+            .home-metric-label {
+                position: relative !important; z-index: 5 !important;
+                font-size: 0.78rem !important;
+                font-weight: 700 !important;
+                color: #94a3b8 !important;
+                text-transform: uppercase !important;
+                letter-spacing: 0.05em !important;
+                margin-bottom: 4px !important;
+            }
+            .home-metric-value {
+                position: relative !important; z-index: 5 !important;
+                font-size: 1.85rem !important;
+                font-weight: 800 !important;
+                color: #f1f5f9 !important;
+                line-height: 1.1 !important;
+            }
+
+            /* 4. Barra de Ferramentas AgGrid (Toolbars) */
+            .st-key-home_urg_actions_toolbar div[data-testid="stHorizontalBlock"],
+            .st-key-home_escola_actions_toolbar div[data-testid="stHorizontalBlock"],
+            .st-key-home_ano_actions_toolbar div[data-testid="stHorizontalBlock"],
+            .st-key-home_detail_toolbar div[data-testid="stHorizontalBlock"] {
+                gap: 0 !important;
+                --st-horizontal-block-gap: 0px !important;
+                justify-content: flex-end !important;
+                align-items: center !important;
+                padding-right: 2px !important;
+            }
+            .st-key-home_urg_actions_toolbar div[data-testid="stColumn"],
+            .st-key-home_escola_actions_toolbar div[data-testid="stColumn"],
+            .st-key-home_ano_actions_toolbar div[data-testid="stColumn"],
+            .st-key-home_detail_toolbar div[data-testid="stColumn"] {
+                padding: 0 !important;
+                margin: 0 !important;
+                width: auto !important;
+                flex: 0 1 auto !important;
+            }
+            .st-key-home_urg_actions_toolbar button,
+            .st-key-home_escola_actions_toolbar button,
+            .st-key-home_ano_actions_toolbar button,
+            .st-key-home_detail_toolbar button,
+            .st-key-home_detail_toolbar div[data-testid="stDownloadButton"] button,
+            .st-key-home_toolbar_column_toggle button,
+            .st-key-home_toolbar_copy button,
+            .st-key-download_csv_home_toolbar button {
+                background: transparent !important;
+                border: 1px solid #334155 !important;
+                box-sizing: border-box !important;
+                border-radius: 0px !important;
+                color: #94a3b8 !important;
+                height: 34px !important;
+                padding: 0 12px !important;
+                font-size: 0.78rem !important;
+                transition: background 0.15s, color 0.15s !important;
+                margin: 0 !important;
+                width: 100% !important;
+                z-index: 1 !important;
+                white-space: nowrap !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                gap: 6px !important;
+                border-right: none !important; /* Evita bordas duplas no meio */
+            }
+            /* O último botão sempre fecha a borda direita */
+            .st-key-download_csv_home_toolbar button,
+            div[class*="st-key-download_"] button {
+                border-right: 1px solid #334155 !important;
+            }
+            /* Garantir que o texto interno também não quebre */
+            .st-key-home_urg_actions_toolbar button p,
+            .st-key-home_escola_actions_toolbar button p,
+            .st-key-home_ano_actions_toolbar button p,
+            .st-key-home_detail_toolbar button p,
+            .st-key-home_detail_toolbar div[data-testid="stDownloadButton"] button p {
+                white-space: nowrap !important;
+                margin: 0 !important;
+                display: inline-block !important;
+            }
+            .st-key-home_urg_actions_toolbar button:hover,
+            .st-key-home_escola_actions_toolbar button:hover,
+            .st-key-home_ano_actions_toolbar button:hover,
+            .st-key-home_detail_toolbar button:hover,
+            .st-key-home_detail_toolbar div[data-testid="stDownloadButton"] button:hover {
+                z-index: 2 !important; /* Traz para frente no hover para mostrar a borda completa */
+                border-color: #38bdf8 !important;
+                color: #38bdf8 !important;
+            }
+
+            /* Arredondamento Inteligente das Extremidades */
+            /* 1. Primeiro botão de QUALQUER grupo (Home ou Tabelas) */
+            .st-key-home_toolbar_column_toggle button,
+            div[class*="st-key-copy_"] button {
+                border-radius: 6px 0 0 6px !important;
+            }
+
+            /* 2. Botão do Meio (Apenas no grupo de 3 da Home) */
+            .st-key-home_toolbar_copy button {
+                border-radius: 0 !important;
+            }
+
+            /* 3. Último botão de QUALQUER grupo (Home ou Tabelas) */
+            .st-key-download_csv_home_toolbar button,
+            div[class*="st-key-download_"] button {
+                border-radius: 0 6px 6px 0 !important;
+                margin-right: 0 !important;
+            }
+
+            /* 4. Caso Especial: Copiar em grupo de 2 (Garantir arredondamento se for o primeiro) */
+            /* Se for o grupo de tabelas, o 'copy_' já é o primeiro e é coberto pela regra 1. */
+
+            /* 5. Painel de Configuração de Colunas */
+            .home-columns-panel-title { font-size: 0.72rem; font-weight: 700; color: #cbd5e1; text-transform: uppercase; }
+            .home-columns-panel-subtitle { font-size: 0.7rem; color: #94a3b8; }
+            .st-key-home_columns_panel div[data-testid="stVerticalBlockBorderWrapper"] { padding: 4px 6px !important; border-radius: 6px !important; }
+            
+            /* 6. Legendas das Tabelas */
+            .home-legend-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(280px, 1fr));
+                column-gap: 24px; row-gap: 6px; margin-top: 8px;
+            }
+            .home-legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #94a3b8; }
+
+            /* 7. Estado Ativo do Toggle de Colunas */
+            .column-toggle-active button {
+                background: #1e3a5f !important;
+                color: #60a5fa !important;
+                border-color: #38bdf8 !important;
+            }
+
+            /* 8. Resets de Link e Remoção de Sublinhados (KPI Cards) */
+            div[data-testid="stMarkdownContainer"] a.home-metric-link-wrapper,
+            div[data-testid="stMarkdownContainer"] a.home-metric-link-wrapper * {
+                text-decoration: none !important;
+                border-bottom: none !important;
+                display: block !important;
+                height: 100%;
+            }
+            a.home-metric-link-wrapper:hover, 
+            a.home-metric-link-wrapper:hover * {
+                text-decoration: none !important;
+                border-bottom: none !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.markdown(
         "Resumo consolidado das ações realizadas por ano, URG e equipe técnica."
@@ -239,7 +304,6 @@ def page_home():
     df, info = home_data["df"], home_data["info"]
 
     escola_ano_data = datasets["escola_ano"]
-    csv_file_escola_ano = escola_ano_data["csv"]
     df_escola_ano, info_escola_ano = (
         escola_ano_data["df"],
         escola_ano_data["info"],
@@ -309,7 +373,7 @@ def page_home():
 
     # SCHEMA_HOME já foi validado no load_csv; mensagens de alerta foram exibidas acima.
 
-    # SCHEMA_HOME já foi validado no load_csv; mensagens de alerta foram exibidas acima.
+
 
     # --- Filtros na Sidebar ---
     home_filter_config = {"ano": True, "urg": True, "escola": True, "tipo": False}
@@ -326,19 +390,82 @@ def page_home():
 
     df_filtrado, selections = sidebar_filters(df, home_filter_config)
     
+    # Injeção Direta de CSS para o Seletor de Ano (Garante aplicação imediata)
+    st.markdown(
+        """
+        <style>
+            /* Container Principal - Ajuste de Espaçamento Vertical */
+            .st-key-massive_year_selector {
+                margin-top: -1.5rem !important; /* Puxa o componente para cima */
+                margin-bottom: 1rem !important;
+            }
+                     
+            /* Alvo em QUALQUER botão dentro do container do seletor */
+            .st-key-massive_year_selector button {
+                height: 56px !important;      /* Reduzido para um tamanho mais equilibrado */
+                min-width: 120px !important;
+                border-radius: 0 !important;  /* Remove arredondamento individual */
+                background-color: #1e293b !important;
+                border: 1px solid #334155 !important;
+                border-right: none !important; /* Remove bordas internas duplicadas */
+                transition: all 0.3s ease !important;
+                margin: 0 !important;
+            }
+            
+            /* Arredondamento apenas nas extremidades do GRUPO */
+            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:first-of-type button,
+            .st-key-massive_year_selector button:first-of-type {
+                border-radius: 10px 0 0 10px !important;
+            }
+            
+            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:last-of-type button,
+            .st-key-massive_year_selector button:last-of-type {
+                border-radius: 0 10px 10px 0 !important;
+                border-right: 1px solid #334155 !important;
+            }
+            
+            /* Alvo em QUALQUER parágrafo ou texto dentro dos botões */
+            .st-key-massive_year_selector button p,
+            .st-key-massive_year_selector button span {
+                font-size: 1.85rem !important; /* Tamanho proporcional e legível */
+                font-weight: 700 !important;
+                color: #f8fafc !important;
+                line-height: 1 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            
+            /* Estado Ativo (Sincronizado com o tema do Streamlit) */
+            .st-key-massive_year_selector button[data-testid*="Active"],
+            .st-key-massive_year_selector button[aria-pressed="true"] {
+                background-color: #3b82f6 !important;
+                border-color: #60a5fa !important;
+                box-shadow: none !important; /* Remove o glow para um visual mais limpo */
+            }
+            
+            .st-key-massive_year_selector button[data-testid*="Active"] p,
+            .st-key-massive_year_selector button[aria-pressed="true"] p {
+                color: #ffffff !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    
     
     # --- SELETOR TEMPORAL MESTRE (INDICADORES E PÁGINA) ---
     current_year = datetime.datetime.now().year
     years_options = sorted([current_year - i for i in range(5)], reverse=True)
     
-    st.segmented_control(
-        label="Ano(s) de Referência:",
-        options=years_options,
-        selection_mode="multi",
-        key="home_year_buttons",
-        on_change=sync_home_to_sidebar,
-        label_visibility="collapsed"
-    )
+    with st.container(key="massive_year_selector"):
+        st.segmented_control(
+            label="Ano(s) de Referência:",
+            options=years_options,
+            selection_mode="multi",
+            key="home_year_buttons",
+            on_change=sync_home_to_sidebar,
+            label_visibility="collapsed"
+        )
     # Sincroniza a variável local com o estado global
     selected_years_comp = st.session_state["global_years"]
     
@@ -397,6 +524,7 @@ def page_home():
     filtro_titulo = f"Anos: {anos_str} / URGs: {urgs_str} / Escolas: {escolas_str}"
 
     st.markdown(f"### Indicadores Gerais ({filtro_titulo})")
+
 
     # --- Filtros aplicados Breadcrumb ---
     filters_placeholder.markdown(
@@ -474,55 +602,290 @@ def page_home():
         ("ALUNOS VACINADOS", total_vacinacao_alunos),
     ]
 
-    def render_metric_row(metrics):
-        cols = st.columns(len(metrics))
+    # Mapeamento de labels para nomes de menu
+    label_to_menu = {
+        "ENCAMINHAMENTOS": "Encaminhamentos",
+        "EXAMES": "Exames",
+        "DOSES DE VACINA APLICADAS": "Vacinação",
+        "ALUNOS VACINADOS": "Vacinação",
+        "ATEND. MÉDICO": "Médico",
+    }
+
+    def prepare_metrics(raw_metrics):
+        return [
+            {
+                "label": label,
+                "value": value,
+                "link": f"/?menu={label_to_menu[label]}" if label in label_to_menu else None
+            }
+            for label, value in raw_metrics
+        ]
+
+    render_metric_cards(prepare_metrics(primary_metrics))
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+    render_metric_cards(prepare_metrics(professional_metrics))
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+    render_metric_cards(prepare_metrics(service_metrics))
+    
+    st.markdown(" ")
+    st.markdown("---")
+
+    # --- NOVO: Tabela Comparativa de Performance por ANO ---
+    st.subheader(f"Tabela Comparativa de Performance por ANO ({filtro_titulo})")
+    st.caption("Nota: As colunas '% Cobertura' representam o percentual de cada indicador sobre o TOTAL DE ALUNOS (ESCOLA) no respectivo ano.")
+
+    # Definição das métricas na ordem exata dos cards (rótulos)
+    metric_definitions = [
+        {"key": "QtdAlunoEscola", "label": "TOTAL DE ALUNOS (ESCOLA)"},
+        {"key": "QtdAluno", "label": "ALUNOS ATENDIDOS"},
+        {"key": "total_profissionais", "label": "ATENDIMENTOS (PROFISSIONAIS)"},
+        {"key": "QtdProfessor", "label": "ATEND. PROFESSOR"},
+        {"key": "QtdPsicologo", "label": "ATEND. PSICÓLOGO"},
+        {"key": "QtdAssistSocial", "label": "ATEND. ASSIST. SOCIAL"},
+        {"key": "QtdEnfermagem", "label": "ATEND. ENFERMAGEM"},
+        {"key": "QtdMedico", "label": "ATEND. MÉDICO"},
+        {"key": "QtdEncaminhamento", "label": "ENCAMINHAMENTOS"},
+        {"key": "QtdExame", "label": "EXAMES"},
+        {"key": "QtdVacina", "label": "DOSES DE VACINA APLICADAS"},
+        {"key": "QtdVacinacao", "label": "ALUNOS VACINADOS"},
+    ]
+
+    comparison_years = sorted([int(y) for y in (selected_years_comp or [])])
+
+    # --- Filtros para a Tabela por ANO (Respeita URG, Escola e Tipo) ---
+    df_home_ano_source = df.copy()
+    
+    # Garante que 'Ano' seja numérico para comparação
+    df_home_ano_source["Ano"] = pd.to_numeric(df_home_ano_source["Ano"], errors="coerce")
+    
+    # 1. Filtro de URG
+    if current_urgs:
+        df_home_ano_source = df_home_ano_source[df_home_ano_source["URG"].isin(current_urgs)]
+    
+    # 2. Filtro de Escola (Cascata)
+    current_escolas_sel = selections.get("escola", [])
+    if current_escolas_sel:
+        all_schools_all = set(df["Escola"].dropna().unique())
+        if set(current_escolas_sel) != all_schools_all:
+            df_home_ano_source = df_home_ano_source[df_home_ano_source["Escola"].isin(current_escolas_sel)]
+
+    # 3. Filtro de Tipo (se configurado)
+    current_tipos_sel = selections.get("tipo", [])
+    if current_tipos_sel and "Tipo" in df_home_ano_source.columns:
+        all_tipos_all = set(df["Tipo"].dropna().unique())
+        if set(current_tipos_sel) != all_tipos_all:
+            df_home_ano_source = df_home_ano_source[df_home_ano_source["Tipo"].isin(current_tipos_sel)]
+
+    # 4. Filtro de Anos (Anos selecionados + Anos de comparação)
+    if comparison_years:
+        df_home_ano_source = df_home_ano_source[df_home_ano_source["Ano"].isin(comparison_years)]
+
+    annual_metric_rows = []
+    for metric in metric_definitions:
+        key = metric["key"]
+        description = metric["label"]
         
-        # Mapeamento de labels para nomes de menu
-        label_to_menu = {
-            "ENCAMINHAMENTOS": "Encaminhamentos",
-            "EXAMES": "Exames",
-            "DOSES DE VACINA APLICADAS": "Vacinação",
-            "ALUNOS VACINADOS": "Vacinação",
-            "ATEND. MÉDICO": "Médico",
-        }
+        row = {"Descricao": description}
         
-        icon_svg = (
-            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
-            'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-left: 4px;">'
-            '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>'
-            '<polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>'
+        if key == "total_profissionais":
+            # Atendimentos Profissionais é a soma de 5 especialidades
+            prof_cols = ["QtdProfessor", "QtdPsicologo", "QtdAssistSocial", "QtdEnfermagem", "QtdMedico"]
+            # Filtra apenas colunas existentes
+            actual_prof_cols = [c for c in prof_cols if c in df_home_ano_source.columns]
+            if not actual_prof_cols:
+                continue
+            
+            metric_by_year = (
+                df_home_ano_source.groupby("Ano")[actual_prof_cols]
+                .sum(min_count=1)
+                .sum(axis=1)
+                .reindex(comparison_years, fill_value=0)
+            )
+        else:
+            if key not in df_home_ano_source.columns:
+                continue
+            
+            metric_by_year = (
+                df_home_ano_source.groupby("Ano")[key]
+                .sum(min_count=1)
+                .reindex(comparison_years, fill_value=0)
+            )
+
+        for year, value in metric_by_year.items():
+            row[str(int(year))] = value
+
+        row["Total"] = metric_by_year.sum()
+        annual_metric_rows.append(row)
+
+    df_home_ano_exibir = pd.DataFrame(annual_metric_rows)
+
+    if df_home_ano_exibir.empty:
+        st.info("Dados insuficientes para gerar o comparativo anual geral.")
+
+    else:
+        # Filtrar o comparativo pelos anos selecionados no seletor mestre
+        all_years_possible = ["2022", "2023", "2024", "2025", "2026"]
+        year_cols_selected = [str(y) for y in comparison_years]
+        year_cols_to_drop = [c for c in all_years_possible if c in df_home_ano_exibir.columns and c not in year_cols_selected]
+        
+        if year_cols_to_drop:
+            df_home_ano_exibir = df_home_ano_exibir.drop(columns=year_cols_to_drop)
+
+        year_cols_existentes = [c for c in year_cols_selected if c in df_home_ano_exibir.columns]
+        
+        numeric_cols_to_process = [
+            col for col in year_cols_existentes + ["Total"] if col in df_home_ano_exibir.columns
+        ]
+
+        if numeric_cols_to_process:
+            df_home_ano_exibir[numeric_cols_to_process] = df_home_ano_exibir[numeric_cols_to_process].apply(
+                pd.to_numeric, errors="coerce"
+            ).fillna(0)
+
+        # Recalcula o Total usando apenas colunas selecionadas
+        df_home_ano_exibir["Total"] = df_home_ano_exibir[year_cols_existentes].sum(axis=1) if year_cols_existentes else 0
+
+        # Cálculos anuais: % Cobertura (Percentual sobre o Total de Alunos da Escola)
+        for year in year_cols_existentes:
+            # Localiza o valor de "TOTAL DE ALUNOS (ESCOLA)" para o ano atual para usar como denominador
+            valor_base_cobertura = df_home_ano_exibir.loc[
+                df_home_ano_exibir["Descricao"] == "TOTAL DE ALUNOS (ESCOLA)", year
+            ].values
+            
+            total_alunos_ano = valor_base_cobertura[0] if len(valor_base_cobertura) > 0 else 0
+            
+            pct_col = f"% Cobertura {year[-2:]}"
+            df_home_ano_exibir[pct_col] = (df_home_ano_exibir[year] / total_alunos_ano * 100) if total_alunos_ano > 0 else 0
+
+        # Cálculos interanuais: Var% em relação ao ano anterior
+        for prev, curr in zip(year_cols_existentes, year_cols_existentes[1:]):
+            var_pct_col = f"Var% {curr[-2:]}-{prev[-2:]}"
+            diff = df_home_ano_exibir[curr] - df_home_ano_exibir[prev]
+            df_home_ano_exibir[var_pct_col] = (diff / df_home_ano_exibir[prev].replace(0, float("nan")) * 100)
+
+        col_order = []
+        if "URG" in df_home_ano_exibir.columns:
+            col_order.append("URG")
+
+        if "Descricao" in df_home_ano_exibir.columns:
+            col_order.append("Descricao")
+
+        for i, year in enumerate(year_cols_existentes):
+            col_order.append(year)
+            col_order.append(f"% Cobertura {year[-2:]}")
+            if i > 0:
+                prev = year_cols_existentes[i - 1]
+                col_order.append(f"Var% {year[-2:]}-{prev[-2:]}")
+
+        if "Total" in df_home_ano_exibir.columns:
+            col_order.append("Total")
+
+        df_home_ano_exibir = df_home_ano_exibir[col_order]
+
+        pct_cols = [c for c in df_home_ano_exibir.columns if c.startswith("% Cobertura") or c.startswith("Var%")]
+
+        # Cria uma versão apenas para exibição formatada (mantém df_home_ano_exibir numérico para o gráfico)
+
+        categoria_col_home = "Descricao" if "Descricao" in df_home_ano_exibir.columns else "URG" if "URG" in df_home_ano_exibir.columns else None
+        
+        if categoria_col_home:
+            total_row = {categoria_col_home: "TOTAL"}
+            for c in df_home_ano_exibir.columns:
+                if c in year_cols_existentes or c == "Total" or c.startswith("Var "):
+                    total_row[c] = df_home_ano_exibir[c].sum()
+                elif c.startswith("Var% ") or c.startswith("% Cobertura"):
+                    total_row[c] = pd.NA
+            
+            df_home_ano_display = pd.concat([df_home_ano_exibir, pd.DataFrame([total_row])], ignore_index=True)
+        else:
+            df_home_ano_display = df_home_ano_exibir.copy()
+
+        abs_cols = [
+            c
+            for c in df_home_ano_display.columns
+            if c in year_cols_existentes or c == "Total" or c.startswith("Var ")
+        ]
+
+        for c in abs_cols:
+            df_home_ano_display[c] = df_home_ano_display[c].map(
+                lambda x: f"{int(float(x)):,}".replace(",", ".") if pd.notna(x) and float(x) != 0 else ""
+            )
+
+        for c in pct_cols:
+            df_home_ano_display[c] = df_home_ano_display[c].map(
+                lambda x: f"{x:,.1f}%".replace(",", ".") if pd.notna(x) and float(x) != 0 else ""
+            )
+
+        # Conversão das colunas para MultiIndex (Super-Header por Ano)
+        new_cols_home = []
+        for c in df_home_ano_display.columns:
+            if c == categoria_col_home:
+                new_cols_home.append((categoria_col_home, ""))
+            elif c == "Total":
+                new_cols_home.append(("Total Geral", ""))
+            elif c in year_cols_existentes:
+                new_cols_home.append((c, "Qtd"))
+            elif str(c).startswith("% Cobertura"):
+                y_str = str(c).split(" ")[-1]
+                new_cols_home.append((f"20{y_str}", c))
+            elif str(c).startswith("Var%"):
+                y_str = str(c).split(" ")[1].split("-")[0]
+                new_cols_home.append((f"20{y_str}", c.replace("-", "/")))
+            else:
+                new_cols_home.append(("", c))
+        df_home_ano_display.columns = pd.MultiIndex.from_tuples(new_cols_home)
+
+        styler_home = df_home_ano_display.style.pipe(
+            apply_saedas_design, categoria_col=categoria_col_home
+        ).hide(axis="index")
+
+        df_home_ano_aggrid, home_ano_column_defs, _ = prepare_comparativo_aggrid_data(
+            styler_home, include_selection_column=False
+        )
+        df_home_ano_body, home_ano_footer_rows = split_aggrid_footer(
+            df_home_ano_aggrid
         )
 
-        for col, (label, value) in zip(cols, metrics):
-            value_fmt = f"{value:,}".replace(",", ".")
-            
-            # Cards na Home agora são estáticos (sem toggle)
-            card_class = "home-metric-card metric-card-static"
-            
-            menu_target = label_to_menu.get(label)
-            label_display = label
-            if menu_target:
-                label_display = (
-                    f'<a href="/?menu={menu_target}" target="_self" class="home-metric-link" '
-                    f'title="Ver detalhes de {menu_target}">'
-                    f'{label}{icon_svg}</a>'
-                )
+        home_ano_grid_options = {
+            "columnDefs": home_ano_column_defs,
+            "defaultColDef": {
+                "resizable": True,
+                "sortable": True,
+                "filter": False,
+                "editable": False,
+                "suppressMenu": True,
+            },
+            "pinnedBottomRowData": home_ano_footer_rows,
+            "domLayout": "normal",
+            "enableCellTextSelection": True,
+            "suppressContextMenu": False,
+            "copyHeadersToClipboard": True,
+        }
 
-            with col:
-                st.markdown(
-                    f'<div class="{card_class}">'
-                    f'<div class="home-metric-label">{label_display}</div>'
-                    f'<div class="home-metric-value">{value_fmt}</div>'
-                    "</div>", 
-                    unsafe_allow_html=True
-                )
+        # A altura é gerenciada pelo render_saedas_aggrid
 
-    render_metric_row(primary_metrics)
-    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-    render_metric_row(professional_metrics)
-    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-    render_metric_row(service_metrics)
-    st.markdown("---")
+        with st.container():
+            df_home_ano_export = (
+                pd.concat(
+                    [df_home_ano_body, pd.DataFrame(home_ano_footer_rows)],
+                    ignore_index=True,
+                )
+                if home_ano_footer_rows
+                else df_home_ano_body.copy()
+            )
+            with st.container(key="home_ano_actions_toolbar"):
+                render_table_toolbar(df_home_ano_export, "comparativo_geral_home.csv", "home_ano_table")
+            st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
+            render_saedas_aggrid(
+                df_home_ano_body,
+                grid_options=home_ano_grid_options,
+                key="home_ano_comparativo_aggrid",
+                incluir_total=bool(home_ano_footer_rows),
+                max_rows=10
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
 
     # --- NOVO: Tabela Comparativa de Performance por URG (Cross-Filtering) ---
     st.subheader(f"Tabela Comparativa de Performance por URG (Anos: {anos_str})")
@@ -535,10 +898,10 @@ def page_home():
     st.session_state["last_df_cmp_urg_home"] = df_cmp_urg_home
     
     if df_cmp_urg_home is not None:
-        df_cmp_urg_aggrid, column_defs, column_map = _prepare_comparativo_aggrid_data(
+        df_cmp_urg_aggrid, column_defs, column_map = prepare_comparativo_aggrid_data(
             df_cmp_urg_home
         )
-        df_cmp_urg_body, footer_rows = _split_aggrid_footer(df_cmp_urg_aggrid)
+        df_cmp_urg_body, footer_rows = split_aggrid_footer(df_cmp_urg_aggrid)
 
         urg_field = next(
             (
@@ -600,79 +963,29 @@ def page_home():
         if pre_selected_rows:
             grid_options["initialState"] = {"rowSelection": pre_selected_rows}
 
-        grid_height = calcular_altura_aggrid(
-            df_cmp_urg_body,
-            limite_linhas="Todas as linhas",
-            incluir_total=bool(footer_rows),
-        )
+        # A altura é gerenciada pelo render_saedas_aggrid
 
         with st.container():
-            st.markdown(
-                """
-                <style>
-                    .selection-master-table .ag-header-cell-label,
-                    .selection-master-table .ag-header-group-cell-label {
-                        justify-content: center !important;
-                        text-align: center !important;
-                        width: 100% !important;
-                    }
-
-                    .selection-master-table .ag-header-cell-text,
-                    .selection-master-table .ag-header-group-text {
-                        text-align: center !important;
-                        width: 100% !important;
-                    }
-                </style>
-                """,
-                unsafe_allow_html=True,
+            df_cmp_urg_export = (
+                pd.concat(
+                    [df_cmp_urg_body, pd.DataFrame(footer_rows)],
+                    ignore_index=True,
+                )
+                if footer_rows
+                else df_cmp_urg_body.copy()
             )
+            with st.container(key="home_urg_actions_toolbar"):
+                render_table_toolbar(df_cmp_urg_export, "comparativo_urg_home.csv", "home_urg_table")
             st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
-            aggrid_response = AgGrid(
+            aggrid_response = render_saedas_aggrid(
                 df_cmp_urg_body,
-                gridOptions=grid_options,
-                height=grid_height,
-                update_mode=GridUpdateMode.SELECTION_CHANGED,
-                allow_unsafe_jscode=True,
-                fit_columns_on_grid_load=True,
-                theme="streamlit",
+                grid_options=grid_options,
                 key=(
                     "urg_table_selection_home_aggrid_"
                     + ("|".join(sorted(map(str, current_selected_urgs))) or "all")
                 ),
-                custom_css={
-                    ".ag-header": {
-                        "background-color": "var(--header-bg) !important",
-                        "color": "var(--header-text) !important",
-                    },
-                    ".ag-header-cell, .ag-header-group-cell": {
-                        "background-color": "var(--header-bg) !important",
-                        "color": "var(--header-text) !important",
-                        "font-weight": "700 !important",
-                    },
-                    ".ag-header-cell-label, .ag-header-group-cell-label": {
-                        "justify-content": "center !important",
-                        "text-align": "center !important",
-                    },
-                    ".ag-header-cell-text, .ag-header-group-text": {
-                        "text-align": "center !important",
-                        "width": "100% !important",
-                    },
-                    ".ag-header-group-cell.saedas-aggrid-centered-header .ag-header-group-cell-label": {
-                        "justify-content": "center !important",
-                        "text-align": "center !important",
-                        "width": "100% !important",
-                    },
-                    ".ag-header-group-cell.saedas-aggrid-centered-header .ag-header-group-text": {
-                        "text-align": "center !important",
-                        "width": "100% !important",
-                    },
-                    ".ag-pinned-bottom-container .ag-row": {
-                        "background-color": "var(--footer-bg) !important",
-                        "color": "var(--footer-text) !important",
-                        "font-weight": "700 !important",
-                        "border-top": "2px solid var(--border-ui) !important",
-                    },
-                },
+                update_mode=GridUpdateMode.SELECTION_CHANGED,
+                incluir_total=bool(footer_rows)
             )
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -718,9 +1031,9 @@ def page_home():
 
         if df_cmp_escola_home is not None:
             df_cmp_escola_aggrid, escola_column_defs, escola_column_map = (
-                _prepare_comparativo_aggrid_data(df_cmp_escola_home)
+                prepare_comparativo_aggrid_data(df_cmp_escola_home)
             )
-            df_cmp_escola_body, escola_footer_rows = _split_aggrid_footer(
+            df_cmp_escola_body, escola_footer_rows = split_aggrid_footer(
                 df_cmp_escola_aggrid
             )
 
@@ -786,50 +1099,29 @@ def page_home():
                     "rowSelection": escola_pre_selected_rows
                 }
 
-            escola_grid_height = calcular_altura_aggrid(
-                df_cmp_escola_body,
-                limite_linhas=10,
-                incluir_total=bool(escola_footer_rows),
-            )
+            # A altura é gerenciada pelo render_saedas_aggrid
 
+            df_cmp_escola_export = (
+                pd.concat(
+                    [df_cmp_escola_body, pd.DataFrame(escola_footer_rows)],
+                    ignore_index=True,
+                )
+                if escola_footer_rows
+                else df_cmp_escola_body.copy()
+            )
+            with st.container(key="home_escola_actions_toolbar"):
+                render_table_toolbar(df_cmp_escola_export, "comparativo_escola_home.csv", "home_escola_table")
             st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
-            escola_aggrid_response = AgGrid(
+            escola_aggrid_response = render_saedas_aggrid(
                 df_cmp_escola_body,
-                gridOptions=escola_grid_options,
-                height=escola_grid_height,
-                update_mode=GridUpdateMode.SELECTION_CHANGED,
-                allow_unsafe_jscode=True,
-                fit_columns_on_grid_load=True,
-                theme="streamlit",
+                grid_options=escola_grid_options,
                 key=(
                     "escola_table_selection_home_aggrid_"
                     + ("|".join(sorted(map(str, selected_escolas_sidebar))) or "all")
                 ),
-                custom_css={
-                    ".ag-header": {
-                        "background-color": "var(--header-bg) !important",
-                        "color": "var(--header-text) !important",
-                    },
-                    ".ag-header-cell, .ag-header-group-cell": {
-                        "background-color": "var(--header-bg) !important",
-                        "color": "var(--header-text) !important",
-                        "font-weight": "700 !important",
-                    },
-                    ".ag-header-cell-label, .ag-header-group-cell-label": {
-                        "justify-content": "center !important",
-                        "text-align": "center !important",
-                    },
-                    ".ag-header-cell-text, .ag-header-group-text": {
-                        "text-align": "center !important",
-                        "width": "100% !important",
-                    },
-                    ".ag-pinned-bottom-container .ag-row": {
-                        "background-color": "var(--footer-bg) !important",
-                        "color": "var(--footer-text) !important",
-                        "font-weight": "700 !important",
-                        "border-top": "2px solid var(--border-ui) !important",
-                    },
-                },
+                update_mode=GridUpdateMode.SELECTION_CHANGED,
+                incluir_total=bool(escola_footer_rows),
+                max_rows=10
             )
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -868,383 +1160,126 @@ def page_home():
 
 
 
-    st.subheader(f"Comparativo Anual Geral ({filtro_titulo})")
-    st.caption("Nota: As colunas '% Total' representam o percentual sobre o total de atendimentos realizados no respectivo ano.")
-
-    metric_columns_to_descriptions = {
-        "QtdAluno": "ALUNOS ATENDIDOS",
-        "QtdAlunoEscola": "ALUNOS CADASTRADOS",
-        "QtdVacinacao": "ALUNOS VACINADOS",
-        "QtdAssistSocial": "AVAL. ASSIST. SOCIAIS",
-        "QtdEnfermagem": "AVAL. ENFERMAGEM",
-        "QtdMedico": "AVAL. MÉDICAS",
-        "QtdProfessor": "AVAL. PROFESSORES",
-        "QtdPsicologo": "AVAL. PSCÓLOGOS",
-        "QtdEncaminhamento": "ENCAMINHAMENTOS",
-        "QtdExame": "EXAMES",
-        "QtdVacina": "VACINAS APLICADAS",
-    }
-
-    available_years_for_general_comparison = sorted(
-        pd.to_numeric(df["Ano"], errors="coerce").dropna().astype(int).unique()
-    )
-    comparison_years = set(selected_years_comp or [])
-    for year in selected_years_comp or []:
-        previous_year = int(year) - 1
-        if previous_year in available_years_for_general_comparison:
-            comparison_years.add(previous_year)
-    comparison_years = sorted(comparison_years)
-
-    df_home_ano_source = df.copy()
-    if current_urgs:
-        df_home_ano_source = df_home_ano_source[
-            df_home_ano_source["URG"].isin(current_urgs)
-        ]
-
-    if current_escolas_for_title:
-        all_schools_set = set(df["Escola"].dropna().unique())
-        selected_schools_set = set(current_escolas_for_title)
-        if selected_schools_set != all_schools_set:
-            df_home_ano_source = df_home_ano_source[
-                df_home_ano_source["Escola"].isin(current_escolas_for_title)
-            ]
-
-    if comparison_years:
-        df_home_ano_source = df_home_ano_source[
-            df_home_ano_source["Ano"].isin(comparison_years)
-        ]
-
-    annual_metric_rows = []
-    for value_col, description in metric_columns_to_descriptions.items():
-        if value_col not in df_home_ano_source.columns:
-            continue
-
-        row = {"Descricao": description}
-        metric_by_year = (
-            df_home_ano_source.groupby("Ano")[value_col]
-            .sum(min_count=1)
-            .reindex(comparison_years, fill_value=0)
-        )
-
-        for year, value in metric_by_year.items():
-            row[str(int(year))] = value
-
-        row["Total"] = metric_by_year.sum()
-        annual_metric_rows.append(row)
-
-    df_home_ano_exibir = pd.DataFrame(annual_metric_rows)
-
-    if df_home_ano_exibir.empty:
-        st.info("Dados insuficientes para gerar o comparativo anual geral.")
-
+    # --- Gráfico de Rosca: Cobertura de Alunos (Refatorado para múltiplos anos) ---
+    if not selected_years_comp:
+        st.info("Selecione um ou mais anos para visualizar a cobertura de alunos.")
     else:
-        # Filtrar o comparativo pelos anos selecionados no seletor mestre
-        all_years_possible = ["2022", "2023", "2024", "2025", "2026"]
-        year_cols_selected = [str(y) for y in comparison_years]
-        year_cols_to_drop = [c for c in all_years_possible if c in df_home_ano_exibir.columns and c not in year_cols_selected]
+        st.subheader(f"Cobertura de alunos da escola (atendidos / cadastrados)")
         
-        if year_cols_to_drop:
-            df_home_ano_exibir = df_home_ano_exibir.drop(columns=year_cols_to_drop)
-
-        year_cols_existentes = [c for c in year_cols_selected if c in df_home_ano_exibir.columns]
-        
-        numeric_cols_to_process = [
-            col for col in year_cols_existentes + ["Total"] if col in df_home_ano_exibir.columns
-        ]
-
-        if numeric_cols_to_process:
-            df_home_ano_exibir[numeric_cols_to_process] = df_home_ano_exibir[numeric_cols_to_process].apply(
-                pd.to_numeric, errors="coerce"
-            ).fillna(0)
-
-        # Recalcula o Total usando apenas colunas selecionadas
-        df_home_ano_exibir["Total"] = df_home_ano_exibir[year_cols_existentes].sum(axis=1) if year_cols_existentes else 0
-
-        # Cálculos anuais: % Total para todos os anos
-        for year in year_cols_existentes:
-            total_ano = df_home_ano_exibir[year].sum()
-            pct_col = f"% Total {year[-2:]}"
-            df_home_ano_exibir[pct_col] = (df_home_ano_exibir[year] / total_ano * 100) if total_ano > 0 else 0
-
-        # Cálculos interanuais: Var% em relação ao ano anterior
-        for prev, curr in zip(year_cols_existentes, year_cols_existentes[1:]):
-            var_pct_col = f"Var% {curr[-2:]}-{prev[-2:]}"
-            diff = df_home_ano_exibir[curr] - df_home_ano_exibir[prev]
-            df_home_ano_exibir[var_pct_col] = (diff / df_home_ano_exibir[prev].replace(0, float("nan")) * 100)
-
-        col_order = []
-        if "URG" in df_home_ano_exibir.columns:
-            col_order.append("URG")
-
-        if "Descricao" in df_home_ano_exibir.columns:
-            col_order.append("Descricao")
-
-        for i, year in enumerate(year_cols_existentes):
-            col_order.append(year)
-            col_order.append(f"% Total {year[-2:]}")
-            if i > 0:
-                prev = year_cols_existentes[i - 1]
-                col_order.append(f"Var% {year[-2:]}-{prev[-2:]}")
-
-        if "Total" in df_home_ano_exibir.columns:
-            col_order.append("Total")
-
-        df_home_ano_exibir = df_home_ano_exibir[col_order]
-
-        pct_cols = [c for c in df_home_ano_exibir.columns if c.startswith("% Total") or c.startswith("Var%")]
-
-        # Cria uma versão apenas para exibição formatada (mantém df_home_ano_exibir numérico para o gráfico)
-
-        categoria_col_home = "Descricao" if "Descricao" in df_home_ano_exibir.columns else "URG" if "URG" in df_home_ano_exibir.columns else None
-        
-        if categoria_col_home:
-            total_row = {categoria_col_home: "TOTAL"}
-            for c in df_home_ano_exibir.columns:
-                if c in year_cols_existentes or c == "Total" or c.startswith("Var "):
-                    total_row[c] = df_home_ano_exibir[c].sum()
-                elif c.startswith("Var% ") or c.startswith("% Total"):
-                    total_row[c] = pd.NA
-            
-            df_home_ano_display = pd.concat([df_home_ano_exibir, pd.DataFrame([total_row])], ignore_index=True)
-        else:
-            df_home_ano_display = df_home_ano_exibir.copy()
-
-        abs_cols = [
-            c
-            for c in df_home_ano_display.columns
-            if c in year_cols_existentes or c == "Total" or c.startswith("Var ")
-        ]
-
-        for c in abs_cols:
-            df_home_ano_display[c] = df_home_ano_display[c].map(
-                lambda x: f"{int(float(x)):,}".replace(",", ".") if pd.notna(x) and float(x) != 0 else ""
-            )
-
-        for c in pct_cols:
-            df_home_ano_display[c] = df_home_ano_display[c].map(
-                lambda x: f"{x:,.1f}%".replace(",", ".") if pd.notna(x) and float(x) != 0 else ""
-            )
-
-        # Conversão das colunas para MultiIndex (Super-Header por Ano)
-        new_cols_home = []
-        for c in df_home_ano_display.columns:
-            if c == categoria_col_home:
-                new_cols_home.append((categoria_col_home, ""))
-            elif c == "Total":
-                new_cols_home.append(("Total Geral", ""))
-            elif c in year_cols_existentes:
-                new_cols_home.append((c, "Qtd"))
-            elif str(c).startswith("% Total"):
-                y_str = str(c).split(" ")[-1]
-                new_cols_home.append((f"20{y_str}", c))
-            elif str(c).startswith("Var%"):
-                y_str = str(c).split(" ")[1].split("-")[0]
-                new_cols_home.append((f"20{y_str}", c.replace("-", "/")))
-            else:
-                new_cols_home.append(("", c))
-        df_home_ano_display.columns = pd.MultiIndex.from_tuples(new_cols_home)
-
-        styler_home = df_home_ano_display.style.pipe(
-            apply_saedas_design, categoria_col=categoria_col_home
-        ).hide(axis="index")
-
-        df_home_ano_aggrid, home_ano_column_defs, _ = _prepare_comparativo_aggrid_data(
-            styler_home, include_selection_column=False
-        )
-        df_home_ano_body, home_ano_footer_rows = _split_aggrid_footer(
-            df_home_ano_aggrid
-        )
-
-        home_ano_grid_options = {
-            "columnDefs": home_ano_column_defs,
-            "defaultColDef": {
-                "resizable": True,
-                "sortable": True,
-                "filter": False,
-                "editable": False,
-                "suppressMenu": True,
-            },
-            "pinnedBottomRowData": home_ano_footer_rows,
-            "domLayout": "normal",
-            "enableCellTextSelection": True,
-            "suppressContextMenu": False,
-            "copyHeadersToClipboard": True,
-        }
-
-        home_ano_grid_height = calcular_altura_aggrid(
-            df_home_ano_body,
-            limite_linhas=10,
-            incluir_total=bool(home_ano_footer_rows),
-        )
-
-        with st.container():
-            st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
-            AgGrid(
-                df_home_ano_body,
-                gridOptions=home_ano_grid_options,
-                height=home_ano_grid_height,
-                update_mode=GridUpdateMode.NO_UPDATE,
-                allow_unsafe_jscode=True,
-                fit_columns_on_grid_load=True,
-                theme="streamlit",
-                key="home_ano_comparativo_aggrid",
-                custom_css={
-                    ".ag-header": {
-                        "background-color": "var(--header-bg) !important",
-                        "color": "var(--header-text) !important",
-                    },
-                    ".ag-header-cell, .ag-header-group-cell": {
-                        "background-color": "var(--header-bg) !important",
-                        "color": "var(--header-text) !important",
-                        "font-weight": "700 !important",
-                    },
-                    ".ag-header-cell-label, .ag-header-group-cell-label": {
-                        "justify-content": "center !important",
-                        "text-align": "center !important",
-                    },
-                    ".ag-header-cell-text, .ag-header-group-text": {
-                        "text-align": "center !important",
-                        "width": "100% !important",
-                    },
-                    ".ag-pinned-bottom-container .ag-row": {
-                        "background-color": "var(--footer-bg) !important",
-                        "color": "var(--footer-text) !important",
-                        "font-weight": "700 !important",
-                        "border-top": "2px solid var(--border-ui) !important",
-                    },
-                },
-            )
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        if st.button("Copiar tabela (Comparativo Geral)", key="copy_home_ano_table"):
-            try:
-                df_home_ano_exibir.to_clipboard(index=False, excel=True)
-
-                st.success("Tabela copiada. Cole no Excel com Ctrl+V.")
-
-            except Exception as exc:
-                st.error(f"Não foi possível copiar automaticamente: {exc}")
-
-        # --- Gráfico de Rosca: Cobertura de Alunos (Refatorado para múltiplos anos) ---
-        if not selected_years_comp:
-            st.info("Selecione um ou mais anos para visualizar a cobertura de alunos.")
-        else:
-            st.subheader(f"Cobertura de alunos da escola (atendidos / cadastrados)")
-            
-            # Legenda Unificada (Manual) para manter a interface limpa
-            st.markdown(
-                """
-                <div style="display: flex; justify-content: center; gap: 24px; margin-bottom: 10px; font-size: 0.95rem;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <div style="width: 14px; height: 14px; background-color: #16a34a; border-radius: 3px;"></div>
-                        <span style="color: #e5e7eb;">Atendidos</span>
-                    </div>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <div style="width: 14px; height: 14px; background-color: #9ca3af; border-radius: 3px;"></div>
-                        <span style="color: #e5e7eb;">Não atendidos</span>
-                    </div>
+        # Legenda Unificada (Manual) para manter a interface limpa
+        st.markdown(
+            """
+            <div style="display: flex; justify-content: center; gap: 24px; margin-bottom: 10px; font-size: 0.95rem;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 14px; height: 14px; background-color: #16a34a; border-radius: 3px;"></div>
+                    <span style="color: #e5e7eb;">Atendidos</span>
                 </div>
-                """,
-                unsafe_allow_html=True
-            )
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <div style="width: 14px; height: 14px; background-color: #9ca3af; border-radius: 3px;"></div>
+                    <span style="color: #e5e7eb;">Não atendidos</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+        
+        anos_ordenados = sorted(selected_years_comp)
+        # Define o número de colunas (máximo 3)
+        n_cols_grid = min(3, len(anos_ordenados))
+        
+        # Itera pelos anos em chunks para criar as linhas do grid
+        for i in range(0, len(anos_ordenados), n_cols_grid):
+            cols = st.columns(3) # Sempre cria 3 colunas para manter o tamanho do gráfico consistente
+            chunk = anos_ordenados[i : i + n_cols_grid]
             
-            anos_ordenados = sorted(selected_years_comp)
-            # Define o número de colunas (máximo 3)
-            n_cols_grid = min(3, len(anos_ordenados))
-            
-            # Itera pelos anos em chunks para criar as linhas do grid
-            for i in range(0, len(anos_ordenados), n_cols_grid):
-                cols = st.columns(3) # Sempre cria 3 colunas para manter o tamanho do gráfico consistente
-                chunk = anos_ordenados[i : i + n_cols_grid]
+            for idx, ano in enumerate(chunk):
+                # Filtra dados específicos do ano
+                df_ano = df_master_filtrado[df_master_filtrado["Ano"] == ano]
                 
-                for idx, ano in enumerate(chunk):
-                    # Filtra dados específicos do ano
-                    df_ano = df_master_filtrado[df_master_filtrado["Ano"] == ano]
-                    
-                    total_cadastrados = df_ano["QtdAlunoEscola"].sum() if not df_ano.empty else 0
-                    total_atendidos = df_ano["QtdAluno"].sum() if not df_ano.empty else 0
-                    
-                    with cols[idx]:
-                        if total_cadastrados > 0:
-                            nao_atendidos = max(total_cadastrados - total_atendidos, 0)
-                            pct_atendidos = (total_atendidos / total_cadastrados) * 100
-                            
-                            df_pie = pd.DataFrame([
-                                {"Status": "Atendidos", "Qtd": total_atendidos},
-                                {"Status": "Não atendidos", "Qtd": nao_atendidos},
-                            ])
-                            
-                            fig_cov = px.pie(
-                                df_pie,
-                                names="Status",
-                                values="Qtd",
-                                hole=0.55,
-                                color="Status",
-                                color_discrete_map={"Atendidos": "#16a34a", "Não atendidos": "#9ca3af"},
-                            )
-                            
-                            fig_cov.update_traces(
-                                texttemplate="%{percent:.1%}<br>(%{value:,.0f})", 
-                                textposition="outside",
-                                hoverinfo="label+percent+value",
-                                marker=dict(line=dict(color='#0f172a', width=2))
-                            )
-                            
-                            fig_cov.update_layout(
-                                separators=",.",
-                                showlegend=False, # Legenda unificada acima
-                                margin=dict(t=60, b=20, l=10, r=10),
-                                height=350,
-                                paper_bgcolor="rgba(0,0,0,0)",
-                                plot_bgcolor="rgba(0,0,0,0)",
-                                title={
-                                    "text": f"<b>ANO {ano}</b><br><span style='font-size: 1.2rem; color: #16a34a;'>{pct_atendidos:.1f}% de Cobertura</span>",
-                                    "x": 0.5,
-                                    "xanchor": "center",
-                                    "y": 0.95,
-                                    "font": {"size": 16, "color": "#f8fafc"},
-                                },
-                            )
-                            
-                            st.plotly_chart(fig_cov, use_container_width=True, key=f"donut_cov_{ano}")
-                        else:
-                            st.info(f"Sem dados de cobertura para {ano}")
+                total_cadastrados = df_ano["QtdAlunoEscola"].sum() if not df_ano.empty else 0
+                total_atendidos = df_ano["QtdAluno"].sum() if not df_ano.empty else 0
+                
+                with cols[idx]:
+                    if total_cadastrados > 0:
+                        nao_atendidos = max(total_cadastrados - total_atendidos, 0)
+                        pct_atendidos = (total_atendidos / total_cadastrados) * 100
+                        
+                        df_pie = pd.DataFrame([
+                            {"Status": "Atendidos", "Qtd": total_atendidos},
+                            {"Status": "Não atendidos", "Qtd": nao_atendidos},
+                        ])
+                        
+                        fig_cov = px.pie(
+                            df_pie,
+                            names="Status",
+                            values="Qtd",
+                            hole=0.55,
+                            color="Status",
+                            color_discrete_map={"Atendidos": "#16a34a", "Não atendidos": "#9ca3af"},
+                        )
+                        
+                        fig_cov.update_traces(
+                            texttemplate="%{percent:.1%}<br>(%{value:,.0f})", 
+                            textposition="outside",
+                            hoverinfo="label+percent+value",
+                            marker=dict(line=dict(color='#0f172a', width=2))
+                        )
+                        
+                        fig_cov.update_layout(
+                            separators=",.",
+                            showlegend=False, # Legenda unificada acima
+                            margin=dict(t=60, b=20, l=10, r=10),
+                            height=350,
+                            paper_bgcolor="rgba(0,0,0,0)",
+                            plot_bgcolor="rgba(0,0,0,0)",
+                            title={
+                                "text": f"<b>ANO {ano}</b><br><span style='font-size: 1.2rem; color: #16a34a;'>{pct_atendidos:.1f}% de Cobertura</span>",
+                                "x": 0.5,
+                                "xanchor": "center",
+                                "y": 0.95,
+                                "font": {"size": 16, "color": "#f8fafc"},
+                            },
+                        )
+                        
+                        st.plotly_chart(fig_cov, use_container_width=True, key=f"donut_cov_{ano}")
+                    else:
+                        st.info(f"Sem dados de cobertura para {ano}")
 
-        year_cols_present = [c for c in year_cols_existentes if c in df_home_ano_exibir.columns]
+    year_cols_present = [c for c in year_cols_existentes if c in df_home_ano_exibir.columns]
 
-        if year_cols_present and "Descricao" in df_home_ano_exibir.columns:
-            df_home_bar = df_home_ano_exibir[["Descricao"] + year_cols_present].copy()
+    if year_cols_present and "Descricao" in df_home_ano_exibir.columns:
+        df_home_bar = df_home_ano_exibir[["Descricao"] + year_cols_present].copy()
 
-            df_home_bar_long = df_home_bar.melt(
-                id_vars="Descricao",
-                value_vars=year_cols_present,
-                var_name="Ano",
-                value_name="Valor",
+        df_home_bar_long = df_home_bar.melt(
+            id_vars="Descricao",
+            value_vars=year_cols_present,
+            var_name="Ano",
+            value_name="Valor",
+        )
+
+        df_home_bar_long = df_home_bar_long.dropna(subset=["Valor"])
+
+        if not df_home_bar_long.empty:
+            df_home_bar_long["Ano"] = df_home_bar_long["Ano"].astype(str)
+
+            fig_home_bar = px.bar(
+                df_home_bar_long,
+                x="Descricao",
+                y="Valor",
+                color="Ano",
+                barmode="group",
+                title="Comparativo Anual Geral (Barras)",
+                labels={"Descricao": "Descrição", "Valor": "Quantidade"},
+            )
+            st.caption("Nota: As colunas '% Total' (na aba de Dados) representam o percentual sobre o total de atendimentos realizados no respectivo ano.")
+
+            fig_home_bar.update_layout(separators=",.", legend_title_text="Ano")
+
+            fig_home_bar.update_traces(
+                texttemplate="%{y:,.0f}", textposition="outside"
             )
 
-            df_home_bar_long = df_home_bar_long.dropna(subset=["Valor"])
-
-            if not df_home_bar_long.empty:
-                df_home_bar_long["Ano"] = df_home_bar_long["Ano"].astype(str)
-
-                fig_home_bar = px.bar(
-                    df_home_bar_long,
-                    x="Descricao",
-                    y="Valor",
-                    color="Ano",
-                    barmode="group",
-                    title="Comparativo Anual Geral (Barras)",
-                    labels={"Descricao": "Descrição", "Valor": "Quantidade"},
-                )
-                st.caption("Nota: As colunas '% Total' (na aba de Dados) representam o percentual sobre o total de atendimentos realizados no respectivo ano.")
-
-                fig_home_bar.update_layout(separators=",.", legend_title_text="Ano")
-
-                fig_home_bar.update_traces(
-                    texttemplate="%{y:,.0f}", textposition="outside"
-                )
-
-                st.plotly_chart(fig_home_bar, use_container_width=True)
+            st.plotly_chart(fig_home_bar, use_container_width=True)
 
 
 
@@ -1262,63 +1297,83 @@ def page_home():
     st.subheader("Distribuição de Atendimentos por Profissional")
 
     if not df_master_filtrado.empty:
-        prof_atendimentos_sums = {
-            "Professor": (
-                df_master_filtrado["QtdProfessor"].sum()
-                if "QtdProfessor" in df_master_filtrado
-                else 0
-            ),
-            "Psicólogo": (
-                df_master_filtrado["QtdPsicologo"].sum()
-                if "QtdPsicologo" in df_master_filtrado
-                else 0
-            ),
-            "Assist. Social": (
-                df_master_filtrado["QtdAssistSocial"].sum()
-                if "QtdAssistSocial" in df_master_filtrado
-                else 0
-            ),
-            "Enfermagem": (
-                df_master_filtrado["QtdEnfermagem"].sum()
-                if "QtdEnfermagem" in df_master_filtrado
-                else 0
-            ),
-            "Médico": (
-                df_master_filtrado["QtdMedico"].sum() if "QtdMedico" in df_master_filtrado else 0
-            ),
-        }
-
-        prof_atendimentos_filtered = {
-            key: value for key, value in prof_atendimentos_sums.items() if value > 0
-        }
-
-        if prof_atendimentos_filtered:
-            df_prof_atend = pd.DataFrame(
-                list(prof_atendimentos_filtered.items()),
-                columns=["Profissional", "Total Atendimentos"],
-            )
-
-            if "Psicólogo" in df_prof_atend["Profissional"].values:
-                df_prof_atend["Profissional"] = df_prof_atend["Profissional"].replace(
-                    {"Psicólogo": "Psicólogo"}
-                )
-
-            fig_prof_pie = px.pie(
-                df_prof_atend,
-                names="Profissional",
-                values="Total Atendimentos",
-                hole=0.3,
-                title=f"Distribuição do Volume Total de Atendimentos ({filtro_titulo})",
-            )
-
-            fig_prof_pie.update_layout(separators=".", legend_title_text="Atendimento")
-
-            st.plotly_chart(fig_prof_pie, use_container_width=True)
-
+        anos_ordenados = sorted(selected_years_comp) if selected_years_comp else []
+        
+        if anos_ordenados:
+            # Color map fixo para consistência entre os múltiplos gráficos
+            prof_color_map = {
+                "Professor": "#38bdf8",     # Azul claro
+                "Enfermagem": "#0284c7",    # Azul médio
+                "Assist. Social": "#fca5a5", # Rosa/Salmão
+                "Médico": "#ef4444",        # Vermelho
+                "Psicólogo": "#4ade80"      # Verde
+            }
+            
+            n_cols_grid = min(3, len(anos_ordenados))
+            
+            for i in range(0, len(anos_ordenados), n_cols_grid):
+                cols = st.columns(3)
+                chunk = anos_ordenados[i : i + n_cols_grid]
+                
+                for idx, ano in enumerate(chunk):
+                    df_ano = df_master_filtrado[df_master_filtrado["Ano"] == ano]
+                    
+                    if not df_ano.empty:
+                        prof_atendimentos_sums = {
+                            "Professor": (df_ano["QtdProfessor"].sum() if "QtdProfessor" in df_ano else 0),
+                            "Psicólogo": (df_ano["QtdPsicologo"].sum() if "QtdPsicologo" in df_ano else 0),
+                            "Assist. Social": (df_ano["QtdAssistSocial"].sum() if "QtdAssistSocial" in df_ano else 0),
+                            "Enfermagem": (df_ano["QtdEnfermagem"].sum() if "QtdEnfermagem" in df_ano else 0),
+                            "Médico": (df_ano["QtdMedico"].sum() if "QtdMedico" in df_ano else 0),
+                        }
+                        
+                        prof_atendimentos_filtered = {
+                            key: value for key, value in prof_atendimentos_sums.items() if value > 0
+                        }
+                        
+                        with cols[idx]:
+                            if prof_atendimentos_filtered:
+                                df_prof_atend = pd.DataFrame(
+                                    list(prof_atendimentos_filtered.items()),
+                                    columns=["Profissional", "Total Atendimentos"],
+                                )
+                                
+                                fig_prof_pie = px.pie(
+                                    df_prof_atend,
+                                    names="Profissional",
+                                    values="Total Atendimentos",
+                                    hole=0.45,
+                                    color="Profissional",
+                                    color_discrete_map=prof_color_map,
+                                )
+                                
+                                fig_prof_pie.update_traces(
+                                    texttemplate="%{percent:.1%}",
+                                    textposition="inside",
+                                    marker=dict(line=dict(color='#0f172a', width=2))
+                                )
+                                
+                                fig_prof_pie.update_layout(
+                                    separators=".",
+                                    showlegend=(idx == 0 and i == 0),
+                                    margin=dict(t=50, b=20, l=10, r=10),
+                                    height=320,
+                                    paper_bgcolor="rgba(0,0,0,0)",
+                                    plot_bgcolor="rgba(0,0,0,0)",
+                                    title={
+                                        "text": f"<b>ANO {ano}</b>",
+                                        "x": 0.5,
+                                        "xanchor": "center",
+                                        "font": {"size": 16, "color": "#f8fafc"},
+                                    },
+                                    legend_title_text="Atendimento"
+                                )
+                                
+                                st.plotly_chart(fig_prof_pie, use_container_width=True, key=f"donut_prof_{ano}")
+                            else:
+                                st.info(f"Sem dados de atendimentos para {ano}")
         else:
-            st.info(
-                "Não há dados de atendimentos por profissionais para exibir para a combinação de filtros selecionada."
-            )
+            st.info("Selecione um ou mais anos para visualizar a distribuição por profissional.")
 
     elif not df.empty:
         st.info(
@@ -2165,7 +2220,7 @@ def page_home():
 
                     elif col_name_display in percentage_column_names_in_display:
                         # Colunas de percentual ficam em branco na linha de total
-
+                        
                         total_row_values[col_name_display] = ""
 
                     elif col_name_display in ["Ano", "Início", "Fechamento"]:
@@ -2292,58 +2347,76 @@ def page_home():
             df_grid_data = df_display.reset_index(drop=True)
             df_grid_data.index = range(1, len(df_grid_data) + 1)
 
-            # Cálculo de altura usando a nova função genérica
-
-            grid_height = calcular_altura_aggrid(
-                df=df_grid_data,
-                limite_linhas=selected_limit,
-                incluir_total=not df_total_row_for_display.empty,
-            )
+            # A altura agora é gerenciada internamente pelo render_saedas_aggrid via parâmetro max_rows
 
             st.markdown(
                 """
             <style>
-                .saedas-toolbar-right {
-                    display: flex;
-                    justify-content: flex-end;
-                    margin-bottom: 4px;
+                /* O estilo de toolbar já é coberto pelo bloco global no início da página */
+                .home-columns-panel-title {
+                    font-size: 0.72rem;
+                    font-weight: 700;
+                    color: #cbd5e1;
+                    letter-spacing: 0.01em;
+                    text-transform: uppercase;
+                    margin-bottom: 1px;
                 }
-                .saedas-toolbar-right div[data-testid="stHorizontalBlock"] {
+                .home-columns-panel-subtitle {
+                    font-size: 0.7rem;
+                    color: #94a3b8;
+                    margin-bottom: 2px;
+                }
+                .st-key-home_columns_panel {
+                    margin: 2px 0 4px 0 !important;
+                }
+                .st-key-home_columns_panel div[data-testid="stVerticalBlockBorderWrapper"] {
+                    padding: 4px 6px !important;
+                    border-radius: 6px !important;
+                }
+                .st-key-home_columns_panel div[data-testid="stHorizontalBlock"] {
                     gap: 0 !important;
-                    justify-content: flex-end !important;
-                    align-items: center !important;
+                    justify-content: flex-start !important;
+                    align-items: flex-start !important;
                     flex-wrap: nowrap !important;
-                    width: auto !important;
                 }
-                .saedas-toolbar-right div[data-testid="column"] {
+                .st-key-home_columns_grid {
+                    margin-top: 0 !important;
+                }
+                .st-key-home_columns_grid div[data-testid="stHorizontalBlock"] {
+                    gap: 0 !important;
+                    justify-content: flex-start !important;
+                    align-items: flex-start !important;
+                    flex-wrap: nowrap !important;
+                    width: fit-content !important;
+                }
+                .st-key-home_columns_grid div[data-testid="stElementContainer"] {
+                    width: fit-content !important;
+                    min-width: fit-content !important;
                     flex: 0 0 auto !important;
                     padding: 0 !important;
-                    min-width: unset !important;
-                    width: auto !important;
+                    margin: 0 12px 0 0 !important;
                 }
-                .saedas-toolbar-right div[data-testid="column"] button {
-                    background: transparent !important;
-                    border: 1px solid #334155 !important;
-                    border-radius: 0 !important;
-                    border-right: none !important;
-                    color: #94a3b8 !important;
-                    height: 34px !important;
-                    padding: 0 12px !important;
-                    font-size: 0.78rem !important;
-                    min-height: unset !important;
-                    transition: background 0.15s, color 0.15s !important;
+                .st-key-home_columns_panel div[data-testid="stCheckbox"] {
+                    margin: 0 !important;
+                }
+                .st-key-home_columns_panel div[data-testid="stCheckbox"] label {
+                    min-height: 22px !important;
+                    padding-top: 0 !important;
+                    padding-bottom: 0 !important;
+                }
+                .st-key-home_columns_panel div[data-testid="stCheckbox"] p {
                     white-space: nowrap !important;
                 }
-                .saedas-toolbar-right div[data-testid="column"]:first-of-type button {
-                    border-radius: 6px 0 0 6px !important;
+                .st-key-home_columns_panel div[data-testid="stLayoutWrapper"] {
+                    width: fit-content !important;
                 }
-                .saedas-toolbar-right div[data-testid="column"]:last-of-type button {
-                    border-radius: 0 6px 6px 0 !important;
-                    border-right: 1px solid #334155 !important;
+                .st-key-home_columns_panel .stVerticalBlock {
+                    gap: 0 !important;
                 }
-                .saedas-toolbar-right div[data-testid="column"] button:hover {
-                    background: #1e293b !important;
-                    color: #e2e8f0 !important;
+                .stVerticalBlock .st-key-home_columns_panel {
+                    width: fit-content !important;
+                    min-width: fit-content !important;
+                    align-self: end !important;
                 }
             </style>
             """,
@@ -2477,65 +2550,95 @@ def page_home():
 
             _colunas_ativo = st.session_state["home_show_column_selector"]
 
-            _active_css = (
-                """
-<style>
-.saedas-toolbar-right div[data-testid="column"]:first-of-type button {
-    background: #1e3a5f !important;
-    color: #60a5fa !important;
-}
-</style>
-"""
-                if _colunas_ativo
-                else ""
-            )
-            if _active_css:
-                st.markdown(_active_css, unsafe_allow_html=True)
+            if st.session_state["home_show_column_selector"]:
+                st.markdown('<div class="column-toggle-active"></div>', unsafe_allow_html=True)
 
-            st.markdown('<div class="saedas-toolbar-right">', unsafe_allow_html=True)
-            _col_colunas, _col_copiar, _col_csv = st.columns([1, 1, 1], gap="small")
+            with st.container(key="home_detail_toolbar"):
+                # Layout manual de colunas para garantir agrupamento sem gaps (CSS acima cuida do resto)
+                _, col_btns = st.columns([0.55, 0.45])
+                with col_btns:
+                    inner_cols = st.columns([0.34, 0.33, 0.31], gap=None)
+                    with inner_cols[0]:
+                        if st.button(
+                            "⚙️ Colunas",
+                            key="home_toolbar_column_toggle",
+                            help="Mostrar/ocultar colunas da tabela",
+                            use_container_width=True
+                        ):
+                            st.session_state["home_show_column_selector"] = not _colunas_ativo
+                    
+                    with inner_cols[1]:
+                        if st.button(
+                            "📋 Copiar",
+                            key="home_toolbar_copy",
+                            help="Copiar tabela para área de transferência (Excel)",
+                            use_container_width=True
+                        ):
+                            try:
+                                df_display_for_copy.to_clipboard(index=False, excel=True)
+                                st.toast("Tabela copiada. Cole no Excel com Ctrl+V.")
+                            except Exception as _copy_exc:
+                                st.toast(f"Não foi possível copiar: {_copy_exc}", icon="❌")
 
-            with _col_colunas:
-                if st.button(
-                    "⚙️ Colunas",
-                    key="home_toolbar_column_toggle",
-                    help="Mostrar/ocultar colunas da tabela",
-                ):
-                    st.session_state["home_show_column_selector"] = not _colunas_ativo
-
-            with _col_copiar:
-                if st.button(
-                    "📋 Copiar",
-                    key="home_toolbar_copy",
-                    help="Copiar tabela para área de transferência (Excel)",
-                ):
-                    try:
-                        df_display_for_copy.to_clipboard(index=False, excel=True)
-                        st.toast("Tabela copiada. Cole no Excel com Ctrl+V.")
-                    except Exception as _copy_exc:
-                        st.toast(f"Não foi possível copiar: {_copy_exc}", icon="❌")
-
-            with _col_csv:
-                st.download_button(
-                    label="⬇️ CSV",
-                    data=csv_visible_data,
-                    file_name="detalhamento_home.csv",
-                    mime="text/csv",
-                    key="download_csv_home_toolbar",
-                    help="Exportar tabela como CSV",
-                )
-
-            st.markdown("</div>", unsafe_allow_html=True)
+                    with inner_cols[2]:
+                        st.download_button(
+                            label="⬇️ CSV",
+                            data=csv_visible_data,
+                            file_name="detalhamento_home.csv",
+                            mime="text/csv",
+                            key="download_csv_home_toolbar",
+                            help="Exportar tabela como CSV",
+                            use_container_width=True
+                        )
 
             if st.session_state["home_show_column_selector"]:
-                selected_hidden_columns = st.multiselect(
-                    "Colunas a ocultar",
-                    options=available_columns,
-                    default=selected_hidden_columns,
-                    key="home_hidden_columns_selector",
-                    help="Selecione as colunas que deseja ocultar na tabela",
-                )
-                st.session_state["home_hidden_columns"] = selected_hidden_columns
+                with st.container(key="home_columns_panel", border=True):
+                    st.markdown(
+                        '<div class="home-columns-panel-title">Configuração de colunas</div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.markdown(
+                        '<div class="home-columns-panel-subtitle">Marque para exibir e desmarque para ocultar</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    selected_visible_columns = []
+                    max_rows_per_column = 10
+                    column_groups = [
+                        available_columns[idx : idx + max_rows_per_column]
+                        for idx in range(0, len(available_columns), max_rows_per_column)
+                    ]
+
+                    if column_groups:
+                        with st.container(
+                            key="home_columns_grid",
+                            horizontal=True,
+                            horizontal_alignment="left",
+                            vertical_alignment="top",
+                            gap=None,
+                        ):
+                            for group_idx, group_columns in enumerate(column_groups):
+                                with st.container(
+                                    key=f"home_columns_group_{group_idx}", border=False
+                                ):
+                                    for item_idx, column_name in enumerate(group_columns):
+                                        default_visible = (
+                                            column_name not in selected_hidden_columns
+                                        )
+                                        checkbox_key = (
+                                            f"home_col_visible_g{group_idx}_i{item_idx}"
+                                        )
+                                        is_visible = st.checkbox(
+                                            str(column_name),
+                                            value=default_visible,
+                                            key=checkbox_key,
+                                        )
+                                        if is_visible:
+                                            selected_visible_columns.append(column_name)
+
+                    st.session_state["home_hidden_columns"] = [
+                        col for col in available_columns if col not in selected_visible_columns
+                    ]
             else:
                 st.session_state["home_hidden_columns"] = selected_hidden_columns
 
@@ -2550,14 +2653,13 @@ def page_home():
 
             grid_options = grid_builder.build()
 
-            AgGrid(
+            render_saedas_aggrid(
                 df_grid_data,
-                gridOptions=grid_options,
-                height=grid_height,
+                grid_options=grid_options,
+                key="home_detalhamento_aggrid",
                 update_mode=GridUpdateMode.SELECTION_CHANGED,
-                allow_unsafe_jscode=True,
-                fit_columns_on_grid_load=True,
-                theme="streamlit",
+                incluir_total=not df_total_row_for_display.empty,
+                max_rows=selected_limit
             )
 
         # If df_display is empty but df_filtrado wasn't (meaning filters resulted in no detailed rows)

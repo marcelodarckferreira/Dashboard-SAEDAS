@@ -2,8 +2,10 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 import re
+import numpy as np
+from st_aggrid import JsCode, AgGrid, GridUpdateMode
 
-from app.utils.styles import render_metric_cards
+from app.utils.styles import render_metric_cards, apply_saedas_design
 
 
 def toggle_multiselect_value(current_selection: list | None, value) -> list:
@@ -16,14 +18,13 @@ def toggle_multiselect_value(current_selection: list | None, value) -> list:
     return current
 
 
-def should_use_native_regulacao_button(value) -> bool:
-    """Return True when a regulacao card should be rendered as a native button."""
-    return True
+def render_section_divider():
+    """Renderiza um divisor visual padrão com espaçamento otimizado."""
+    st.markdown(" ")
+    st.markdown("---")
 
 
-def get_native_regulacao_button_type(value, selected_values: list | None) -> str:
-    """Return the Streamlit button type that matches the regulacao selection state."""
-    return "primary" if value in (selected_values or []) else "tertiary"
+
 
 
 def prepare_nutricao_aluno_table(
@@ -214,56 +215,7 @@ def render_metric(label: str, value) -> None:
         render_metric_cards([(label, value)])
 
 
-def render_grouped_bar(
-    df, group_col, value_col, title, percent_label="% do Total", color_col=None
-):
-    """Render a horizontal bar chart plus table for a grouped summary."""
-    group = df.groupby(group_col)[value_col].sum().reset_index()
-    if group.empty:
-        st.info(f"Nenhum dado de {title.lower()} para exibir.")
-        return
 
-    total = group[value_col].sum()
-    group[percent_label] = (100 * group[value_col] / total).round(2).astype(str) + "%"
-    fig = px.bar(
-        group.sort_values(value_col, ascending=False),
-        x=value_col,
-        y=group_col if isinstance(group_col, str) else group_col[-1],
-        orientation="h",
-        text=percent_label,
-        color=color_col or (group_col if isinstance(group_col, str) else None),
-    )
-    fig.update_traces(textposition="auto")
-    st.subheader(title)
-    st.plotly_chart(fig, use_container_width=True)
-    st.dataframe(
-        group.sort_values(value_col, ascending=False), use_container_width=True, hide_index=True
-    )
-    st.markdown(f"**Total: {total:,.0f}**".replace(",", "."))
-
-
-def render_evolucao(df, value_col="Quantidade"):
-    """Render evolution by Ano and URG line chart and table."""
-    evolucao = df.groupby(["Ano", "URG"])[value_col].sum().reset_index()
-    st.subheader("Evolução por Ano e URG")
-    if evolucao.empty:
-        st.info("Nenhum dado de Evolução para exibir.")
-        return
-
-    fig = px.line(evolucao, x="Ano", y=value_col, color="URG", markers=True)
-    fig.update_layout(
-        xaxis=dict(
-            tickformat=",d",
-            tickmode="array",
-            ticktext=[str(int(ano)) for ano in sorted(evolucao["Ano"].unique())],
-            tickvals=sorted(evolucao["Ano"].unique()),
-        ),
-        separators=",.",
-        yaxis=dict(tickformat=",.0f"),
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    st.dataframe(evolucao, use_container_width=True, hide_index=True)
-    st.markdown(f"**Total: {evolucao[value_col].sum():,.0f}**".replace(",", "."))
 
 
 def _roman_to_int(s: str) -> int:
@@ -436,10 +388,17 @@ def render_top_por_urg(df, value_col, titulo, label_col, table_key=None, active_
                 kwargs["selection_mode"] = selection_mode
                 kwargs["key"] = table_key
                 
-            st.dataframe(df_cmp, **kwargs)
             if table_key:
+                with st.container():
+                    st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
+                    st.dataframe(df_cmp, **kwargs)
+                    st.markdown('</div>', unsafe_allow_html=True)
                 st.caption(f"Nota: Clique em qualquer linha de {label_col} para filtrar todo o restante do dashboard. As colunas '% Total' representam o percentual sobre o total da URG {urg_selecionada} no respectivo ano.")
             else:
+                with st.container():
+                    st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
+                    st.dataframe(df_cmp, **kwargs)
+                    st.markdown('</div>', unsafe_allow_html=True)
                 st.caption(f"Nota: Esta tabela utiliza os filtros da sidebar. As colunas '% Total' representam o percentual sobre o total da URG {urg_selecionada} no respectivo ano.")
             return df_cmp
     else:
@@ -475,11 +434,16 @@ def format_filters_applied(
 
 
 def build_comparativo_anual(
-    df: pd.DataFrame, categoria_col: str, value_col: str = "Quantidade", active_row_value: str = None
+    df: pd.DataFrame, 
+    categoria_col: str, 
+    value_col: str = "Quantidade", 
+    active_row_value: str = None,
+    denominator_row_label: str = None,
+    pct_label: str = "Total"
 ) -> pd.DataFrame | None:
     """
-    Gera tabela de comparativo anual com colunas de variação absolutas e percentuais,
-    respeitando os filtros aplicados na própria página.
+    Gera tabela de comparativo anual com colunas de variação absolutas e percentuais.
+    Suporta Taxa de Cobertura se denominator_row_label for fornecido.
     """
     if (
         df is None
@@ -505,7 +469,7 @@ def build_comparativo_anual(
         .fillna(0)
     )
     
-    # Ordenação especial para URGs (numeral romano)
+    # Ordenação especial para URGs
     if categoria_col == "URG":
         pivot["_order"] = pivot.index.map(_urg_sort_key)
         pivot = pivot.sort_values("_order").drop(columns="_order")
@@ -519,11 +483,19 @@ def build_comparativo_anual(
     pivot["Total"] = pivot[year_cols].sum(axis=1)
     df_cmp = pivot.reset_index()
 
-    # Cálculos anuais: % Total para todos os anos
+    # Cálculos anuais: % Cobertura ou % Total
     for year in year_cols:
-        pct_col = f"% Total {year % 100:02d}"
-        total_ano = df_cmp[year].sum()
-        df_cmp[pct_col] = (df_cmp[year] / total_ano * 100) if total_ano > 0 else 0
+        pct_col_name = f"% {pct_label} {year % 100:02d}"
+        
+        if denominator_row_label:
+            # Padrão Cobertura: denominador é uma linha específica (ex: TOTAL DE ALUNOS)
+            valor_base = df_cmp.loc[df_cmp[categoria_col] == denominator_row_label, year].values
+            total_ref = valor_base[0] if len(valor_base) > 0 else 0
+        else:
+            # Padrão Total: denominador é a soma da coluna
+            total_ref = df_cmp[year].sum()
+            
+        df_cmp[pct_col_name] = (df_cmp[year] / total_ref * 100) if total_ref > 0 else 0
 
     # Cálculos interanuais: Var% em relação ao ano anterior
     for prev, curr in zip(year_cols, year_cols[1:]):
@@ -535,11 +507,11 @@ def build_comparativo_anual(
     df_cmp = df_cmp.rename(columns={y: str(y) for y in year_cols})
     year_cols_str = [str(y) for y in year_cols]
 
-    # Ordenação obrigatória: Ano, % Total, Var%
+    # Ordenação das colunas
     col_order = [categoria_col]
     for i, curr_year in enumerate(year_cols):
         col_order.append(str(curr_year))
-        col_order.append(f"% Total {curr_year % 100:02d}")
+        col_order.append(f"% {pct_label} {curr_year % 100:02d}")
         
         if i > 0:
             prev_year = year_cols[i - 1]
@@ -548,12 +520,10 @@ def build_comparativo_anual(
     if "Total" in df_cmp.columns:
         col_order.append("Total")
 
-    # Garante que só mantenha colunas existentes
-    col_order = [c for c in col_order if c in df_cmp.columns]
-    df_cmp = df_cmp[col_order]
+    df_cmp = df_cmp[[c for c in col_order if c in df_cmp.columns]]
 
-    # Formatação condicional
-    pct_cols = [c for c in df_cmp.columns if c.startswith("% Total") or c.startswith("Var%")]
+    # Formatação
+    pct_cols = [c for c in df_cmp.columns if c.startswith("%") or c.startswith("Var%")]
     abs_cols = [c for c in df_cmp.columns if c not in pct_cols and c != categoria_col]
 
     # --- Adiciona Linha de TOTAL ---
@@ -576,7 +546,7 @@ def build_comparativo_anual(
             lambda x: f"{x:,.1f}%".replace(",", ".") if pd.notna(x) and float(x) != 0 else "-"
         )
 
-    # Conversão das colunas para MultiIndex (Super-Header por Ano)
+    # MultiIndex Header
     new_cols = []
     for c in df_display.columns:
         if c == categoria_col:
@@ -585,69 +555,253 @@ def build_comparativo_anual(
             new_cols.append(("Total Geral", ""))
         elif c in year_cols_str:
             new_cols.append((c, "Qtd"))
-        elif str(c).startswith("% Total"):
+        elif str(c).startswith(f"% {pct_label}"):
             y_str = str(c).split(" ")[-1]
             new_cols.append((f"20{y_str}", c))
         elif str(c).startswith("Var%"):
-            y_str = str(c).split(" ")[1].split("-")[0]
+            parts = str(c).split(" ")
+            y_str = parts[1].split("-")[0] if len(parts) > 1 else ""
             new_cols.append((f"20{y_str}", c.replace("-", "/")))
         else:
             new_cols.append(("", c))
             
     df_display.columns = pd.MultiIndex.from_tuples(new_cols)
 
-    # Estilização (UI): Zebra, Bordas e Destaque do TOTAL
-    def style_table_rows(row):
-        try:
-            # Tenta obter o valor da categoria (Escola/Atendimento)
-            # O MultiIndex do build_comparativo_anual tem a categoria no nível (col, '')
-            try:
-                val_cat = row[(categoria_col, "")]
-            except (KeyError, IndexError):
-                val_cat = row.iloc[0] # Fallback para a primeira coluna
-                
-            is_total = (val_cat == "TOTAL")
-            
-            # Se for uma lista/conjunto de valores, verifica se o valor da linha está nela
-            if isinstance(active_row_value, (list, set, tuple)):
-                is_active = val_cat in active_row_value
-            else:
-                is_active = (active_row_value and val_cat == active_row_value)
-            
-            if is_total:
-                # Destaque do Rodapé
-                style = "background-color: #2b3b4e; font-weight: bold; border-top: 2px solid #ffffff; color: #ffffff; border-bottom: 1px solid rgba(255, 255, 255, 0.1); border-left: 1px solid rgba(255, 255, 255, 0.1); border-right: 1px solid rgba(255, 255, 255, 0.1);"
-            elif is_active:
-                # Active State (Igual ao da Performance por URG)
-                style = "background-color: rgba(96, 165, 250, 0.3) !important; border: 2px solid #60a5fa !important; font-weight: bold; color: #ffffff;"
-            else:
-                # Zebra Effect e Reforço da Grid
-                # Usa o índice numérico da linha para o zebra
-                row_idx = row.name if isinstance(row.name, (int, float)) else 0
-                bg = "#1e2530" if row_idx % 2 == 0 else "#161c26"
-                style = f"background-color: {bg}; border: 1px solid rgba(255, 255, 255, 0.1); color: #ffffff;"
-            
-            # Adiciona cursor pointer para feedback visual de interatividade
-            style += " cursor: pointer;"
-            return [style] * len(row)
-            
-        except Exception:
-            # Fallback seguro para evitar tela branca
-            return ["background-color: #161c26; color: #ffffff;"] * len(row)
+    return df_display.style.pipe(
+        apply_saedas_design, categoria_col=categoria_col, active_items=active_row_value
+    ).hide(axis="index")
 
-    # Efeito Hover e bordas globais da tabela via CSS injection
-    hover_styles = [
-        {"selector": "thead th", "props": [("text-align", "center"), ("background-color", "#161c26")]},
-        {"selector": "thead tr:first-child th", "props": [("border-bottom", "2px solid rgba(255, 255, 255, 0.2)"), ("background-color", "#12171f")]},
-        {"selector": "tbody tr:hover td", "props": [("background-color", "#374151 !important")]},
-        {"selector": "tbody tr:hover th", "props": [("background-color", "#374151 !important")]},
-    ]
 
-    styled_df = (
-        df_display.style
-        .apply(style_table_rows, axis=1)
-        .set_table_styles(hover_styles)
-        .hide(axis="index")
-    )
+def calcular_altura_aggrid(
+    df: pd.DataFrame, limite_linhas: int | str | None = "Todas as linhas", incluir_total: bool = False, max_rows: int = 20
+) -> int:
+    """
+    Calcula a altura ideal para uma tabela AgGrid, adaptando-se ao conteúdo 
+    até um teto máximo para manter a ergonomia da página.
+    """
+    APPROX_ROW_HEIGHT = 34
+    APPROX_HEADER_HEIGHT = 36
+    SAFETY_PADDING = 6
+
+    if not isinstance(df, pd.DataFrame):
+        return APPROX_HEADER_HEIGHT + SAFETY_PADDING
+
+    num_data_rows = len(df)
     
-    return styled_df
+    # Lógica Inteligente:
+    # 1. Se o usuário definiu um limite (ex: paginação), respeitamos.
+    # 2. Se for "Todas", adaptamos ao conteúdo, mas limitamos ao max_rows (teto de 20 por padrão).
+    if isinstance(limite_linhas, int) and limite_linhas > 0:
+        num_rows_to_display = min(num_data_rows, limite_linhas)
+    else:
+        num_rows_to_display = min(num_data_rows, max_rows)
+
+    data_height = num_rows_to_display * APPROX_ROW_HEIGHT
+    total_row_height = APPROX_ROW_HEIGHT if incluir_total and num_data_rows > 0 else 0
+    grid_height = APPROX_HEADER_HEIGHT + data_height + total_row_height + SAFETY_PADDING
+    
+    min_height = APPROX_HEADER_HEIGHT + (APPROX_ROW_HEIGHT if incluir_total else 0) + SAFETY_PADDING
+    return max(grid_height, min_height)
+
+
+def prepare_comparativo_aggrid_data(
+    df_styler, include_selection_column: bool = True
+) -> tuple[pd.DataFrame, list[dict], dict]:
+    """Converte o Styler do comparativo anual em dados/colunas compatíveis com AgGrid."""
+    df_data = getattr(df_styler, "data", df_styler)
+    if df_data is None or df_data.empty:
+        return pd.DataFrame(), [], {}
+
+    df_grid = df_data.copy().reset_index(drop=True)
+    column_map = {}
+    grouped_columns = {}
+    flat_columns = []
+
+    # Colunas que devem ser alinhadas à esquerda (labels)
+    LABEL_COLUMNS = {
+        "URG", "Escola", "Descricao", "Encaminhamento", "Aluno", "Ação", "Profissional", "Exame", "Vacina"
+    }
+
+    for idx, col in enumerate(df_grid.columns):
+        if isinstance(col, tuple):
+            group_label = str(col[0] or "")
+            child_label = str(col[1] or "")
+            header_label = child_label or group_label
+        else:
+            group_label = ""
+            header_label = str(col)
+
+        field_name = f"col_{idx}"
+        column_map[field_name] = col
+        flat_columns.append(field_name)
+
+        col_def = {
+            "field": field_name,
+            "headerName": header_label,
+            "sortable": True,
+            "filter": False,
+            "resizable": True,
+        }
+        
+        # Lógica de alinhamento
+        is_label = False
+        if isinstance(col, tuple):
+            is_label = any(lbl in LABEL_COLUMNS for lbl in col if lbl)
+        else:
+            is_label = col in LABEL_COLUMNS
+
+        if not is_label:
+            col_def["cellStyle"] = {"textAlign": "center"}
+
+        if group_label and child_label:
+            grouped_columns.setdefault(group_label, []).append(col_def)
+        else:
+            grouped_columns.setdefault(field_name, []).append(
+                {
+                    **col_def,
+                    "headerName": header_label,
+                    "headerClass": "saedas-aggrid-header",
+                }
+            )
+
+    df_grid.columns = flat_columns
+    
+    column_defs = []
+    if include_selection_column:
+        column_defs.append(
+            {
+                "headerName": "",
+                "valueGetter": JsCode(
+                    "function(p){return p.node.rowPinned?'':p.node.rowIndex+1;}"
+                ),
+                "checkboxSelection": True,
+                "headerCheckboxSelection": False,
+                "width": 60,
+                "maxWidth": 60,
+                "pinned": "left",
+                "sortable": False,
+                "filter": False,
+                "resizable": False,
+                "suppressMenu": True,
+            }
+        )
+
+    for group_name, children in grouped_columns.items():
+        if group_name in flat_columns:
+            column_defs.extend(children)
+        else:
+            column_defs.append(
+                {
+                    "headerName": group_name,
+                    "headerClass": "saedas-aggrid-centered-header",
+                    "children": children,
+                }
+            )
+
+    return df_grid, column_defs, column_map
+
+
+def split_aggrid_footer(df_grid: pd.DataFrame) -> tuple[pd.DataFrame, list[dict]]:
+    """Usa a última linha do DataFrame como rodapé fixo do AgGrid."""
+    if df_grid.empty:
+        return df_grid, []
+
+    footer_row = df_grid.tail(1).replace({np.nan: None}).to_dict(orient="records")
+    body_df = df_grid.iloc[:-1].copy().reset_index(drop=True)
+    return body_df, footer_row
+
+
+def render_saedas_aggrid(
+    df_data: pd.DataFrame, 
+    grid_options: dict, 
+    key: str, 
+    update_mode=GridUpdateMode.NO_UPDATE, 
+    incluir_total: bool = False,
+    max_rows: int = 20,
+    **kwargs
+):
+    """
+    Função Mestra para renderização de AgGrid no SAEDAS.
+    Encapsula:
+    1. Cálculo de altura dinâmica (adaptativa ou teto de 20 linhas).
+    2. Estilização padrão do Design System (Headers e Footers).
+    3. Configurações otimizadas de performance e layout.
+    """
+    # 1. Cálculo Automático da Altura
+    grid_height = calcular_altura_aggrid(
+        df_data, 
+        limite_linhas="Todas as linhas", 
+        incluir_total=incluir_total, 
+        max_rows=max_rows
+    )
+
+    # 2. Definição de Estilo Padrão (Design System)
+    default_custom_css = {
+        ".ag-header": {
+            "background-color": "var(--header-bg) !important",
+            "color": "var(--header-text) !important",
+        },
+        ".ag-header-cell, .ag-header-group-cell": {
+            "background-color": "var(--header-bg) !important",
+            "color": "var(--header-text) !important",
+            "font-weight": "700 !important",
+        },
+        ".ag-header-cell-label, .ag-header-group-cell-label": {
+            "justify-content": "center !important",
+            "text-align": "center !important",
+        },
+        ".ag-header-cell-text, .ag-header-group-text": {
+            "text-align": "center !important",
+            "width": "100% !important",
+        },
+        ".ag-pinned-bottom-container .ag-row": {
+            "background-color": "var(--footer-bg) !important",
+            "color": "var(--footer-text) !important",
+            "font-weight": "700 !important",
+            "border-top": "2px solid var(--border-ui) !important",
+        },
+    }
+    
+    # Mescla CSS customizado se fornecido
+    custom_css = kwargs.get("custom_css", default_custom_css)
+
+    # 3. Renderização
+    return AgGrid(
+        df_data,
+        gridOptions=grid_options,
+        height=grid_height,
+        update_mode=update_mode,
+        allow_unsafe_jscode=kwargs.get("allow_unsafe_jscode", True),
+        fit_columns_on_grid_load=kwargs.get("fit_columns_on_grid_load", True),
+        theme=kwargs.get("theme", "streamlit"),
+        key=key,
+        custom_css=custom_css,
+        **{k: v for k, v in kwargs.items() if k not in ["custom_css", "allow_unsafe_jscode", "fit_columns_on_grid_load", "theme"]}
+    )
+
+
+def render_table_toolbar(df_export: pd.DataFrame, file_name: str, key_prefix: str):
+    """Renderiza a barra de ferramentas (Copiar e CSV) para tabelas alinhada à direita."""
+    csv_data = df_export.to_csv(index=False, sep=";").encode("utf-8-sig")
+    
+    # Criamos colunas para forçar o agrupamento horizontal e alinhamento à direita
+    # O primeiro espaço é vazio para empurrar os botões para a direita
+    _, col_copy, col_csv = st.columns([0.85, 0.08, 0.07], gap="small")
+    
+    with col_copy:
+        if st.button("📋 Copiar", key=f"copy_{key_prefix}", help="Copiar tabela para a área de transferência"):
+            try:
+                df_export.to_clipboard(index=False, excel=True)
+                st.toast("Tabela copiada com sucesso!")
+            except Exception as exc:
+                st.toast(f"Erro ao copiar: {exc}", icon="❌")
+                
+    with col_csv:
+        st.download_button(
+            label="⬇️ CSV",
+            data=csv_data,
+            file_name=file_name,
+            mime="text/csv",
+            key=f"download_{key_prefix}",
+            help="Baixar tabela em formato CSV"
+        )

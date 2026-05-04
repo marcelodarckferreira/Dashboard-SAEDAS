@@ -18,7 +18,7 @@ from app.utils.page_helpers import (
 )
 from app.utils.state_manager import init_global_state, sync_home_to_sidebar, sync_home_urg_to_sidebar
 from app.utils.schemas import SCHEMA_MEDICO, SCHEMA_MEDICO_ALUNO, SCHEMA_MEDICO_ANO
-from app.utils.styles import apply_global_css, render_metric_cards
+from app.utils.styles import apply_global_css, render_metric_cards, build_row_style_fn, get_table_hover_styles
 
 
 # ── Utilitários de ordenação por numeral romano ───────────────────────────────
@@ -78,7 +78,7 @@ def page_medico():
     )
     filters_placeholder = st.empty()
     st.markdown("---")
-    apply_global_css()
+    # apply_global_css() — Já injetado no app.py
 
     datasets = carregar_dados_medico()
 
@@ -212,6 +212,27 @@ def page_medico():
     # 2. Com filtro de escola (para mostrar Top Atendimentos)
     df_filt_no_atend = df_filt.copy()
 
+    # --- Geração do filtro_titulo Dinâmico (Data-Driven UI) ---
+    def get_filter_display_string_for_title(selected_items_list, all_available_items_list):
+        if not selected_items_list or (all_available_items_list and set(map(str, selected_items_list)) == set(map(str, all_available_items_list))):
+            return "Todos"
+        return ", ".join(map(str, sorted(list(set(selected_items_list)))))
+
+    all_urgs_for_title = sorted(list(df["URG"].dropna().unique()))
+    all_years_for_title = sorted(list(df["Ano"].dropna().unique())) if "Ano" in df.columns else []
+    all_escolas_for_title = sorted(list(df["Escola"].dropna().unique()))
+    
+    current_urgs_for_title = st.session_state["global_urgs"] if st.session_state["global_urgs"] else all_urgs_for_title
+    current_escolas_for_title = selections.get("escola", [])
+    
+    anos_str = get_filter_display_string_for_title(selected_years_comp, all_years_for_title)
+    urgs_str = get_filter_display_string_for_title(current_urgs_for_title, all_urgs_for_title)
+    escolas_str = get_filter_display_string_for_title(current_escolas_for_title, all_escolas_for_title)
+    
+    filtro_titulo = f"Anos: {anos_str} / URGs: {urgs_str} / Escolas: {escolas_str}"
+
+    st.markdown(f"### Indicadores Gerais ({filtro_titulo})")
+    
     filters_placeholder.markdown(
         "**Filtros aplicados:** "
         + format_filters_applied(
@@ -387,44 +408,28 @@ def page_medico():
                 elif str(c).startswith("Var%"):
                     y_str = str(c).split(" ")[1].split("-")[0]
                     new_cols.append((f"20{y_str}", c.replace("-", "/")))
-                else:
-                    new_cols.append(("", c))
             df_pivot_display = df_pivot.copy()
             df_pivot_display.columns = pd.MultiIndex.from_tuples(new_cols)
 
-            # Zebra-striping e Bordas via Styler
-            def _zebra(row):
-                active_urgs = st.session_state.get("global_urgs", [])
-                is_active = row[("URG", "")] in active_urgs
-                
-                if row[("URG", "")] == "TOTAL":
-                    style = "background-color: #2b3b4e; font-weight: bold; border-top: 2px solid #ffffff; color: #ffffff; border-bottom: 1px solid rgba(255, 255, 255, 0.1); border-left: 1px solid rgba(255, 255, 255, 0.1); border-right: 1px solid rgba(255, 255, 255, 0.1);"
-                elif is_active:
-                    style = "background-color: rgba(96, 165, 250, 0.3) !important; border: 2px solid #60a5fa !important; font-weight: bold;"
-                else:
-                    bg = "#1e2530" if row.name % 2 == 0 else "#161c26"
-                    style = f"background-color: {bg}; border: 1px solid rgba(255, 255, 255, 0.1);"
-                return [style] * len(row)
+            # Estilização adaptativa ao tema
+            style_fn_medico = build_row_style_fn("URG", st.session_state.get("global_urgs", []))
+            hover_styles_medico = get_table_hover_styles()
 
             # Sincronização de Checkboxes (Paridade Sidebar -> Tabela)
-            # Só atualiza se a mudança vier da SIDEBAR ou se for a carga inicial
             current_urgs = st.session_state.get("global_urgs", [])
             try:
                 urg_col_values = df_pivot["URG"].tolist()
                 target_indices = [i for i, val in enumerate(urg_col_values) if val in current_urgs]
                 
-                # Obtém a seleção atual da tabela
                 current_sel_obj = st.session_state.get("urg_table_selection_medico", {})
                 current_table_selection = current_sel_obj.get("selection", {}).get("rows", [])
                 
-                # Só sobrescreve se houver divergência real e a última interação NÃO foi na própria tabela
                 if set(target_indices) != set(current_table_selection):
                     if st.session_state.get("last_interaction_source") != "table":
                         st.session_state["urg_table_selection_medico"] = {"selection": {"rows": target_indices, "columns": []}}
             except Exception: pass
 
             def _fmt_br(v):
-                """Formata número com separador de milhar brasileiro (ponto)."""
                 try:
                     f = float(v)
                     if pd.isna(f) or f == 0:
@@ -434,7 +439,6 @@ def page_medico():
                     return ""
 
             def _fmt_pct(v):
-                """Formata valor percentual com 2 casas decimais e sufixo %."""
                 try:
                     f = float(v)
                     if pd.isna(f) or f == 0:
@@ -443,37 +447,32 @@ def page_medico():
                 except (ValueError, TypeError):
                     return ""
 
-            # Efeito Hover e bordas do thead
-            hover_styles = [
-                {"selector": "thead th", "props": [("text-align", "center"), ("background-color", "#161c26")]},
-                {"selector": "thead tr:first-child th", "props": [("border-bottom", "2px solid rgba(255, 255, 255, 0.2)"), ("background-color", "#12171f")]},
-                {"selector": "tbody tr:hover td", "props": [("background-color", "#374151 !important")]},
-                {"selector": "tbody tr:hover th", "props": [("background-color", "#374151 !important")]},
-            ]
-
             fmt_br_dict = {c: _fmt_br for c in new_cols if c[1] == "Qtd" or c[0] == "Total Geral"}
             fmt_pct_dict = {c: _fmt_pct for c in new_cols if c[1].startswith("% Total") or c[1].startswith("Var%")}
 
             styled_pivot = (
                 df_pivot_display.style
-                .apply(_zebra, axis=1)
+                .apply(style_fn_medico, axis=1)
                 .set_properties(**{"text-align": "right"}, subset=[c for c in new_cols if c[0] != "URG"])
                 .set_properties(**{"text-align": "left", "font-weight": "600"}, subset=[("URG", "")])
-                .set_table_styles(hover_styles)
+                .set_table_styles(hover_styles_medico)
                 .format(fmt_br_dict, na_rep="")
                 .format(fmt_pct_dict, na_rep="")
                 .hide(axis="index")
             )
             
             # Renderização da Tabela com Múltipla Seleção (Usando Styler para visual premium)
-            st.dataframe(
-                styled_pivot, 
-                use_container_width=True, 
-                hide_index=True,
-                on_select=sync_urg_table_to_global_medico,
-                selection_mode="multi-row",
-                key="urg_table_selection_medico"
-            )
+            with st.container():
+                st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
+                st.dataframe(
+                    styled_pivot, 
+                    width="stretch", 
+                    hide_index=True,
+                    on_select=sync_urg_table_to_global_medico,
+                    selection_mode="multi-row",
+                    key="urg_table_selection_medico"
+                )
+                st.markdown('</div>', unsafe_allow_html=True)
         else:
             st.info("Não há dados suficientes para montar o comparativo por URG.")
 
@@ -574,7 +573,7 @@ def page_medico():
             yaxis_title="Total de Atendimentos",
             hovermode="x unified"
         )
-        st.plotly_chart(fig_urg, use_container_width=True)
+        st.plotly_chart(fig_urg, width="stretch")
 
     # ── Painel de Cobertura e Atendimento por URG ───────────────────────────────────────────────────
     st.subheader("Painel de Cobertura e Atendimento por URG")
@@ -686,24 +685,13 @@ def page_medico():
 
         df_pivot_perf.columns = pd.MultiIndex.from_tuples(new_cols_perf)
 
-        hover_styles_perf = [
-            {"selector": "thead th", "props": [("text-align", "center"), ("background-color", "#161c26")]},
-            {"selector": "thead tr:first-child th", "props": [("border-bottom", "2px solid rgba(255, 255, 255, 0.2)"), ("background-color", "#12171f")]},
-            {"selector": "tbody tr:hover td", "props": [("background-color", "#374151 !important")]},
-            {"selector": "tbody tr:hover th", "props": [("background-color", "#374151 !important")]},
-        ]
-
-        def _zebra_perf(row):
-            if row[("URG", "")] == "TOTAL":
-                style = "background-color: #2b3b4e; font-weight: bold; border-top: 2px solid #ffffff; color: #ffffff; border-bottom: 1px solid rgba(255, 255, 255, 0.1); border-left: 1px solid rgba(255, 255, 255, 0.1); border-right: 1px solid rgba(255, 255, 255, 0.1);"
-            else:
-                bg = "#1e2530" if row.name % 2 == 0 else "#161c26"
-                style = f"background-color: {bg}; border: 1px solid rgba(255, 255, 255, 0.1);"
-            return [style] * len(row)
+        # Estilização adaptativa ao tema
+        style_fn_perf = build_row_style_fn("URG", st.session_state.get("global_urgs", []))
+        hover_styles_perf = get_table_hover_styles()
 
         styled_perf = (
             df_pivot_perf.style
-            .apply(_zebra_perf, axis=1)
+            .apply(style_fn_perf, axis=1)
             .set_properties(**{"text-align": "right"}, subset=[c for c in new_cols_perf if c[0] != "URG"])
             .set_properties(**{"text-align": "left", "font-weight": "600"}, subset=[("URG", "")])
             .set_table_styles(hover_styles_perf)
@@ -745,14 +733,17 @@ def page_medico():
 
         st.session_state["last_df_pivot_perf_medico"] = df_pivot_perf
 
-        st.dataframe(
-            df_pivot_perf, 
-            use_container_width=True, 
-            hide_index=True,
-            on_select=sync_perf_table_to_global_medico,
-            selection_mode="multi-row",
-            key="perf_table_selection_medico"
-        )
+        with st.container():
+            st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
+            st.dataframe(
+                styled_perf, 
+                width="stretch", 
+                hide_index=True,
+                on_select=sync_perf_table_to_global_medico,
+                selection_mode="multi-row",
+                key="perf_table_selection_medico"
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
     else:
         st.info("Nenhum dado de URG disponível para o cálculo de performance anual.")
 
@@ -778,7 +769,6 @@ def page_medico():
             alunos_selecionados = st.multiselect(
                 "Filtrar por Aluno",
                 options=alunos_disponiveis,
-                default=[],
                 placeholder="Todos",
                 key="medico_aluno_multiselect",
             )
@@ -794,7 +784,6 @@ def page_medico():
             series_selecionadas = st.multiselect(
                 "Filtrar por Série",
                 options=series_disponiveis,
-                default=[],
                 placeholder="Todas",
                 key="medico_serie_multiselect",
             )
@@ -810,7 +799,6 @@ def page_medico():
             turmas_selecionadas = st.multiselect(
                 "Filtrar por Turma",
                 options=turmas_disponiveis,
-                default=[],
                 placeholder="Todas",
                 key="medico_turma_multiselect",
             )
@@ -889,21 +877,12 @@ def page_medico():
             preview_limit = 500
             df_aluno_head = df_aluno_final.head(preview_limit).reset_index(drop=True)
 
-            hover_styles_aluno = [
-                {"selector": "thead th", "props": [("text-align", "center"), ("background-color", "#161c26"), ("font-weight", "bold")]},
-                {"selector": "thead tr:first-child th", "props": [("border-bottom", "2px solid rgba(255, 255, 255, 0.2)"), ("background-color", "#12171f")]},
-                {"selector": "tbody tr:hover td", "props": [("background-color", "#374151 !important")]},
-                {"selector": "tbody tr:hover th", "props": [("background-color", "#374151 !important")]},
-            ]
-
-            def _zebra_aluno(row):
-                bg = "#1e2530" if row.name % 2 == 0 else "#161c26"
-                style = f"background-color: {bg}; border: 1px solid rgba(255, 255, 255, 0.05);"
-                return [style] * len(row)
+            style_fn_aluno = build_row_style_fn("Aluno")
+            hover_styles_aluno = get_table_hover_styles()
 
             styled_aluno = (
                 df_aluno_head.style
-                .apply(_zebra_aluno, axis=1)
+                .apply(style_fn_aluno, axis=1)
                 .set_properties(**{"text-align": "left"})
                 .set_table_styles(hover_styles_aluno)
                 .hide(axis="index")
@@ -911,7 +890,7 @@ def page_medico():
 
             st.dataframe(
                 styled_aluno,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "Menu": st.column_config.LinkColumn(

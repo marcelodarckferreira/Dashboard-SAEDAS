@@ -1,0 +1,185 @@
+<h2>Comportamento do botão "Colunas"</h2>
+<p class="subtitle">Ao clicar em ⚙️ Colunas, como o seletor de colunas aparece?</p>
+
+<style>
+  .sim-bg {
+    background: #0f1117;
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-family: 'Source Sans Pro', sans-serif;
+    font-size: 0.8rem;
+  }
+  .sim-title { color: #cbd5e1; font-size: 0.85rem; font-weight: 600; }
+  .sim-table {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #475569;
+    font-size: 0.72rem;
+    margin-top: 8px;
+  }
+  .sim-header { display: flex; align-items: center; justify-content: space-between; }
+  /* grupo de botões */
+  .toolbar-c {
+    display: flex;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .btn-g {
+    background: transparent; border: none;
+    border-right: 1px solid #334155;
+    color: #94a3b8; height: 30px; padding: 0 10px;
+    display: flex; align-items: center; gap: 5px;
+    font-size: 0.72rem; cursor: pointer; white-space: nowrap;
+  }
+  .btn-g:last-child { border-right: none; }
+  .btn-g.active { background: #1e3a5f; color: #60a5fa; border-color: #1e40af; }
+
+  /* Opção A — seção expandida abaixo do toolbar */
+  .expand-panel {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    padding: 10px 12px;
+    margin-top: -1px;
+    color: #94a3b8;
+    font-size: 0.72rem;
+  }
+  .expand-label { color: #64748b; font-size: 0.68rem; margin-bottom: 6px; }
+  .chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    background: #0f172a; border: 1px solid #334155;
+    border-radius: 20px; padding: 2px 10px;
+    font-size: 0.68rem; color: #94a3b8; cursor: pointer;
+  }
+  .chip.off { border-color: #1e40af; background: #1e3a5f; color: #60a5fa; }
+
+  /* Opção B — popover flutuante */
+  .popover-wrap { position: relative; display: inline-block; }
+  .popover {
+    position: absolute; top: 36px; right: 0;
+    background: #1e293b; border: 1px solid #334155;
+    border-radius: 8px; padding: 12px 14px;
+    min-width: 220px; z-index: 10;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    color: #94a3b8; font-size: 0.72rem;
+  }
+  .pop-title { color: #cbd5e1; font-size: 0.75rem; font-weight: 600; margin-bottom: 8px; }
+  .check-row { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
+  .check-box {
+    width: 14px; height: 14px;
+    border: 1px solid #475569; border-radius: 3px;
+    background: #0f172a; display: inline-block; flex-shrink: 0;
+  }
+  .check-box.on { background: #2563eb; border-color: #2563eb; }
+
+  /* Opção C — painel lateral deslizante (simplificado) */
+  .slide-wrap { display: flex; gap: 0; }
+  .side-panel {
+    width: 140px; background: #1e293b;
+    border: 1px solid #334155; border-radius: 6px 0 0 6px;
+    padding: 10px 12px; flex-shrink: 0;
+    font-size: 0.72rem; color: #94a3b8;
+  }
+  .main-panel { flex: 1; }
+  .side-title { color: #cbd5e1; font-size: 0.73rem; font-weight: 600; margin-bottom: 8px; }
+</style>
+
+<div class="cards">
+
+  <!-- OPÇÃO A — seção expandida -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sim-bg">
+        <div class="sim-header">
+          <span class="sim-title">Detalhamento dos Dados</span>
+          <div class="toolbar-c">
+            <div class="btn-g active">⚙️ Colunas</div>
+            <div class="btn-g">💾 Salvar</div>
+            <div class="btn-g">⬇️ CSV</div>
+          </div>
+        </div>
+        <div class="expand-panel">
+          <div class="expand-label">OCULTAR COLUNAS</div>
+          <div class="chip-row">
+            <span class="chip">Ano</span>
+            <span class="chip off">URG</span>
+            <span class="chip">Escola</span>
+            <span class="chip off">Início</span>
+            <span class="chip">PAE (%)</span>
+          </div>
+        </div>
+        <div class="sim-table">[ tabela AgGrid ]</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Seção expansível (atual)</h3>
+      <p>Painel aparece entre a toolbar e a tabela, empurrando o conteúdo para baixo. Já é o comportamento existente — só precisa de redesign visual.</p>
+    </div>
+  </div>
+
+  <!-- OPÇÃO B — popover flutuante -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sim-bg">
+        <div class="sim-header">
+          <span class="sim-title">Detalhamento dos Dados</span>
+          <div style="position:relative;">
+            <div class="toolbar-c">
+              <div class="btn-g active">⚙️ Colunas</div>
+              <div class="btn-g">💾 Salvar</div>
+              <div class="btn-g">⬇️ CSV</div>
+            </div>
+            <div class="popover">
+              <div class="pop-title">Selecionar colunas</div>
+              <div class="check-row"><span class="check-box on"></span> Ano</div>
+              <div class="check-row"><span class="check-box on"></span> URG</div>
+              <div class="check-row"><span class="check-box"></span> Escola</div>
+              <div class="check-row"><span class="check-box on"></span> PAE (%)</div>
+              <div class="check-row"><span class="check-box"></span> Fechamento</div>
+            </div>
+          </div>
+        </div>
+        <div class="sim-table" style="margin-top:100px;">[ tabela AgGrid ]</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Popover flutuante</h3>
+      <p>Menu suspenso sobre a tabela, sem mover o layout. Mais elegante, mas requer hack de CSS/HTML — o Streamlit não suporta popovers nativamente.</p>
+    </div>
+  </div>
+
+  <!-- OPÇÃO C — multiselect nativo -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sim-bg">
+        <div class="sim-header">
+          <span class="sim-title">Detalhamento dos Dados</span>
+          <div class="toolbar-c">
+            <div class="btn-g active">⚙️ Colunas</div>
+            <div class="btn-g">💾 Salvar</div>
+            <div class="btn-g">⬇️ CSV</div>
+          </div>
+        </div>
+        <div style="margin:8px 0 6px; padding:6px 10px; background:#1e293b; border:1px solid #334155; border-radius:4px; color:#94a3b8; font-size:0.72rem;">
+          <span style="color:#64748b;">Colunas a ocultar: </span>
+          <span style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:1px 8px;margin-right:4px;font-size:0.68rem;">URG ✕</span>
+          <span style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:1px 8px;font-size:0.68rem;">Início ✕</span>
+          <span style="color:#475569;margin-left:4px;">+ adicionar...</span>
+        </div>
+        <div class="sim-table">[ tabela AgGrid ]</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Multiselect nativo (recomendado)</h3>
+      <p>Usa o <code>st.multiselect</code> do Streamlit diretamente. Chips clicáveis, busca integrada. Mantém o comportamento atual mas integrado à nova toolbar.</p>
+    </div>
+  </div>
+
+</div>

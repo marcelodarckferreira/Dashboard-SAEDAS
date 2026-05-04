@@ -1,0 +1,118 @@
+<h2>Ícone e nome para o botão de cópia</h2>
+<p class="subtitle">Substitui 💾 Salvar — qual combinação representa melhor "copiar tabela para área de transferência"?</p>
+
+<style>
+  .sim-bg {
+    background: #0f1117;
+    border-radius: 8px;
+    padding: 14px 18px;
+    font-family: 'Source Sans Pro', sans-serif;
+  }
+  .sim-header { display: flex; align-items: center; justify-content: space-between; }
+  .sim-title { color: #cbd5e1; font-size: 0.83rem; font-weight: 600; }
+  .toolbar-c {
+    display: flex;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .btn-g {
+    background: transparent; border: none;
+    border-right: 1px solid #334155;
+    color: #94a3b8; height: 30px; padding: 0 11px;
+    display: flex; align-items: center; gap: 5px;
+    font-size: 0.75rem; cursor: pointer; white-space: nowrap;
+  }
+  .btn-g:last-child { border-right: none; }
+  .btn-g.highlight { background: #1e293b; color: #e2e8f0; }
+  .badge {
+    display: inline-block;
+    background: #0d3349;
+    border: 1px dashed #0ea5e9;
+    border-radius: 4px;
+    padding: 0 4px;
+    font-size: 0.68rem;
+    color: #38bdf8;
+    margin-left: 4px;
+  }
+</style>
+
+<div class="cards">
+
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sim-bg">
+        <div class="sim-header">
+          <span class="sim-title">Detalhamento dos Dados</span>
+          <div class="toolbar-c">
+            <div class="btn-g">⚙️ Colunas</div>
+            <div class="btn-g highlight">📋 Copiar <span class="badge">novo</span></div>
+            <div class="btn-g">⬇️ CSV</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — 📋 Copiar</h3>
+      <p>Ícone de prancheta (clipboard). Universalmente associado a "copiar para área de transferência". Nome direto e curto.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sim-bg">
+        <div class="sim-header">
+          <span class="sim-title">Detalhamento dos Dados</span>
+          <div class="toolbar-c">
+            <div class="btn-g">⚙️ Colunas</div>
+            <div class="btn-g highlight">📄 Cópia <span class="badge">novo</span></div>
+            <div class="btn-g">⬇️ CSV</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — 📄 Cópia</h3>
+      <p>Ícone de documento. Nome "Cópia" é substantivo — mais compacto que o verbo "Copiar". Consistente com o botão já existente abaixo da tabela.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sim-bg">
+        <div class="sim-header">
+          <span class="sim-title">Detalhamento dos Dados</span>
+          <div class="toolbar-c">
+            <div class="btn-g">⚙️ Colunas</div>
+            <div class="btn-g highlight">⎘ Copiar tabela <span class="badge">novo</span></div>
+            <div class="btn-g">⬇️ CSV</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — ⎘ Copiar tabela</h3>
+      <p>Símbolo de cópia (⎘) com rótulo descritivo. Mais específico — deixa claro que copia a tabela toda, não apenas uma célula.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="d" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sim-bg">
+        <div class="sim-header">
+          <span class="sim-title">Detalhamento dos Dados</span>
+          <div class="toolbar-c">
+            <div class="btn-g">⚙️ Colunas</div>
+            <div class="btn-g highlight">🗒️ Copiar Excel <span class="badge">novo</span></div>
+            <div class="btn-g">⬇️ CSV</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>D — 🗒️ Copiar Excel</h3>
+      <p>Explicita que a cópia é formatada para colar no Excel (tab-separated). Remove ambiguidade sobre o destino da cópia.</p>
+    </div>
+  </div>
+
+</div>

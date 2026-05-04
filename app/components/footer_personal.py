@@ -9,18 +9,18 @@ def footer_personal():
         bottom: 0;
         left: 0;
         width: 100%;
-        color: #ccc;
+        color: var(--text-muted);
         text-align: center;
-        background-color: #0e1117;
+        background-color: var(--surface-elevated);
         padding: 10px;
         font-size: 0.85em;
         z-index: 9999;
-        border-top: 1px solid #444;
+        border-top: 1px solid var(--border-ui);
     }
     </style>
 
     <div class="custom-footer">
-        &copy; 2025 Prefeitura da Cidade de Nova Iguaçu &bull; SEMED &bull; Sistema SAEDAS
+        &copy; 2026 Prefeitura da Cidade de Nova Iguaçu &bull; SEMED &bull; Sistema SAEDAS
     </div>
     """,
         unsafe_allow_html=True,

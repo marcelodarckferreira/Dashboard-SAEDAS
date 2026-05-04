@@ -2,7 +2,7 @@
 
 **Data:** 2026-05-03  
 **Arquivo alvo:** `app/app_pages/home.py`  
-**Status:** Aprovado
+**Status:** Implementado (ajustes pós-implementação aplicados)
 
 ---
 
@@ -23,12 +23,12 @@ O objetivo é consolidar os controles em uma **toolbar unificada à direita, aci
 ```
 [título / controle de linhas]          [⚙️ Colunas | 📋 Copiar | ⬇️ CSV]
 ────────────────────────────────────────────────────────────────────────
-(multiselect — visível somente quando Colunas ativo)
+(painel de checkboxes — visível somente quando Colunas ativo)
 ────────────────────────────────────────────────────────────────────────
 [ tabela AgGrid                                                        ]
 ```
 
-Implementado com `st.columns([espaço, toolbar])` para empurrar o grupo à direita.
+Implementado com `st.container(key="home_detail_toolbar", horizontal=True, horizontal_alignment="right")` para fixar o grupo à direita sem depender de wrappers HTML.
 
 ### Grupo de Botões (Visual)
 
@@ -49,18 +49,30 @@ Implementado com `st.columns([espaço, toolbar])` para empurrar o grupo à direi
 
 ### Seletor de Colunas (expansível)
 
-Quando `home_show_column_selector = True`, renderiza `st.multiselect` entre a toolbar e a tabela:
+Quando `home_show_column_selector = True`, renderiza um painel com checkboxes entre a toolbar e a tabela:
 
 ```python
-st.multiselect(
-    "Colunas a ocultar",
-    options=available_columns,
-    default=st.session_state["home_hidden_columns"],
-    key="home_hidden_columns_selector",
-)
+with st.container(key="home_columns_panel", border=True):
+    max_rows_per_column = 10
+    column_groups = [
+        available_columns[idx : idx + max_rows_per_column]
+        for idx in range(0, len(available_columns), max_rows_per_column)
+    ]
+    with st.container(
+        key="home_columns_grid",
+        horizontal=True,
+        horizontal_alignment="left",
+        vertical_alignment="top",
+        gap=None,
+    ):
+        ...
 ```
 
-O estado `home_hidden_columns` é lido em seguida para ocultar colunas via `grid_builder.configure_column(col, hide=True)`.
+Regras do painel:
+- Máximo de **10 linhas por coluna**.
+- Ao exceder 10 itens, cria uma nova coluna automaticamente.
+- Checkboxes: marcado = exibir; desmarcado = ocultar.
+- `home_hidden_columns` continua sendo a fonte para `grid_builder.configure_column(col, hide=True)`.
 
 ---
 
@@ -68,7 +80,7 @@ O estado `home_hidden_columns` é lido em seguida para ocultar colunas via `grid
 
 | Chave | Tipo | Descrição |
 |-------|------|-----------|
-| `home_show_column_selector` | `bool` | Controla visibilidade do multiselect |
+| `home_show_column_selector` | `bool` | Controla visibilidade do painel de checkboxes |
 | `home_hidden_columns` | `list[str]` | Colunas atualmente ocultas na tabela |
 
 Ambas já existem — nenhuma chave nova é necessária.
@@ -85,33 +97,19 @@ Ambas já existem — nenhuma chave nova é necessária.
 
 ## CSS Injection (novo)
 
-A classe `.saedas-toolbar-right` é aplicada envolvendo o `st.columns` com:
-```python
-st.markdown('<div class="saedas-toolbar-right">', unsafe_allow_html=True)
-_, col_toolbar = st.columns([6, 1])
-# ... botões dentro de col_toolbar ...
-st.markdown('</div>', unsafe_allow_html=True)
-```
-
 ---
 
 ```css
-/* Container da nova toolbar */
-div[data-testid="stHorizontalBlock"].saedas-toolbar-right {
+/* Toolbar (botões) */
+.st-key-home_detail_toolbar div[data-testid="stHorizontalBlock"] {
     justify-content: flex-end !important;
     align-items: center !important;
     gap: 0 !important;
-    margin-bottom: 4px;
+    flex-wrap: nowrap !important;
 }
-
-/* Agrupa visualmente os botões */
-div.saedas-toolbar-right div[data-testid="column"] {
-    flex: 0 0 auto !important;
-    padding: 0 !important;
-}
-
-/* Remove bordas padrão e aplica estilo unificado */
-div.saedas-toolbar-right button {
+.st-key-home_toolbar_column_toggle button,
+.st-key-home_toolbar_copy button,
+.st-key-download_csv_home_toolbar button {
     background: transparent !important;
     border: 1px solid #334155 !important;
     border-radius: 0 !important;
@@ -120,18 +118,34 @@ div.saedas-toolbar-right button {
     height: 34px !important;
     padding: 0 12px !important;
     font-size: 0.78rem !important;
-    transition: background 0.15s, color 0.15s !important;
 }
-div.saedas-toolbar-right button:first-of-type {
+.st-key-home_toolbar_column_toggle button {
     border-radius: 6px 0 0 6px !important;
 }
-div.saedas-toolbar-right button:last-of-type {
+.st-key-download_csv_home_toolbar button {
     border-radius: 0 6px 6px 0 !important;
     border-right: 1px solid #334155 !important;
 }
-div.saedas-toolbar-right button:hover {
+.st-key-home_toolbar_column_toggle button:hover,
+.st-key-home_toolbar_copy button:hover,
+.st-key-download_csv_home_toolbar button:hover {
     background: #1e293b !important;
     color: #e2e8f0 !important;
+}
+
+/* Painel de colunas */
+.st-key-home_columns_panel div[data-testid="stHorizontalBlock"] {
+    gap: 0 !important;
+}
+.st-key-home_columns_grid div[data-testid="stHorizontalBlock"] {
+    gap: 0 !important;
+    justify-content: flex-start !important;
+    width: fit-content !important;
+}
+.st-key-home_columns_grid div[data-testid="stElementContainer"] {
+    width: fit-content !important;
+    min-width: fit-content !important;
+    flex: 0 0 auto !important;
 }
 ```
 
@@ -142,6 +156,29 @@ div.saedas-toolbar-right button:hover {
 - Persistência de colunas entre sessões (apenas `st.session_state` — sessão atual)
 - Aplicar a mesma toolbar nas outras páginas (`aluno.py`, `consulta.py`, etc.)
 - Popover flutuante ou painel lateral
+
+---
+
+## Evolução Implementada (Padrão Home)
+
+Após a implementação inicial do detalhamento, o padrão de toolbar agrupada também foi aplicado nas demais tabelas `AgGrid` da Home:
+
+- Tabela comparativa por URG: `📋 Copiar` + `⬇️ CSV` no topo direito.
+- Tabela comparativa por Escola: `📋 Copiar` + `⬇️ CSV` no topo direito.
+- Comparativo anual geral: `📋 Copiar` + `⬇️ CSV` no topo direito.
+
+Esse padrão foi consolidado no Design System e na documentação de arquitetura como referência para futuras tabelas `AgGrid` da Home.
+
+Estrutura obrigatória do grupo de botões:
+- Mesma composição visual do grupo de referência (Detalhamento dos Dados).
+- Mesmo comportamento de agrupamento: botões colados, borda contínua e cantos arredondados apenas nas extremidades.
+- Não usar variações de design entre tabelas.
+- Sem componentes/blocos extras entre toolbar e AgGrid (distância vertical mínima).
+
+Implementação padrão consolidada:
+- Toolbar de ações por tabela com `st.container(horizontal=True, horizontal_alignment="right", gap=None)`.
+- CSS escopado por `key` fixa do container (`.st-key-home_*_actions_toolbar`).
+- Evitar classes dinâmicas (`st-emotion-cache-*`) e wrappers HTML de apoio.
 
 ---
 

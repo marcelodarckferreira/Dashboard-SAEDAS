@@ -40,7 +40,7 @@ st.markdown(
     '<meta property="og:title" content="Dashboard SAEDAS" />', unsafe_allow_html=True
 )
 
-# CSS global
+# CSS global (Sincronizado com o Design System SAEDAS)
 apply_global_css()
 
 # --- Tratamento de Parâmetros de URL (Deep-linking) ---
@@ -93,7 +93,15 @@ with st.sidebar:
         # Usamos flexbox para centralizar o conteúdo (a imagem) dentro do div.
         st.markdown(
             f"""
-            <div style="display: flex; justify-content: center;">
+            <div style="
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                background-color: #1e293b;
+                border-radius: 12px;
+                padding: 12px 8px;
+                margin-bottom: 8px;
+            ">
                 <img src="data:image/png;base64,{img_str}" alt="Logo SAEDAS" width="200">
             </div>
             """,
@@ -157,17 +165,5 @@ elif menu_escolhido == "Médico":
     page_medico()
 elif menu_escolhido == "Aluno":
     page_aluno()
-
-# --- Estilos globais ---
-st.markdown(
-    """
-    <style>
-        #MainMenu {visibility: visible;}
-        footer {visibility: hidden;}
-    </style>
-""",
-    unsafe_allow_html=True,
-)
-
 
 # streamlit run app.py

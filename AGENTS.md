@@ -8,6 +8,7 @@ Core application code lives in `app/`.
 - `app/utils/`: data loading, schemas, style helpers.
 - `app/data/`: CSV datasets consumed by dashboards.
 - `app/assets/`: static files (CSS, logo, favicon).
+- `docs/`: Unified Technical Documentation (Design System, Data Interaction, Architecture).
 
 Operational scripts include `app/exportar_dados_csv.sh`, `app/fechamento_saedas.sh`, and `gerar_relatorio_pdf.py` (report generation).
 
@@ -47,3 +48,9 @@ For PRs, include:
 
 ## Security & Configuration Tips
 Do not commit secrets or production credentials. Move DB/server credentials used by shell scripts to environment variables or a local, untracked config. Treat CSV files as sensitive health/student data and sanitize before sharing externally.
+
+## UI/UX & Interaction Governance (MANDATORY)
+Refer to [docs/design_system.md](docs/design_system.md) and [docs/data_interaction.md](docs/data_interaction.md) for strict UI standards. 
+- **Master Tables**: No internal filters; use `.selection-master-table` class.
+- **Table Footers**: Bold, header-colored, with hidden checkboxes for TOTAL rows.
+- **Two-Way Binding**: Mandatory sync between Sidebar and Master Tables.

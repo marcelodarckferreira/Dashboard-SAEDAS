@@ -43,3 +43,13 @@ def sync_sidebar_urg_to_home():
 def sync_home_urg_to_sidebar():
     """Callback disparada quando a seleção na tabela/botões da Home muda (URGs)."""
     st.session_state["sidebar_urg_filter"] = st.session_state["global_urgs"]
+    st.session_state["last_interaction_source"] = "table"
+
+def sync_sidebar_escola_to_global():
+    """Callback disparada quando a sidebar muda (Escolas)."""
+    # Marca que a mudança veio da sidebar
+    st.session_state["last_interaction_source"] = "sidebar"
+
+def sync_global_escola_to_sidebar():
+    """Mantém a sidebar em paridade com as seleções de tabela de escola."""
+    pass # Geralmente as tabelas de escola já atualizam o sidebar_escola_filter diretamente

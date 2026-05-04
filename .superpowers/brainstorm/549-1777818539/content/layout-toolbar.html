@@ -1,0 +1,173 @@
+<h2>Layout do grupo de botões</h2>
+<p class="subtitle">Os três botões ficam à direita acima da tabela. Qual estilo visual você prefere?</p>
+
+<style>
+  /* Simulação do contexto SAEDAS dark mode */
+  .sim-bg {
+    background: #0f1117;
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+    font-family: 'Source Sans Pro', sans-serif;
+  }
+  .sim-table-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .sim-title {
+    color: #cbd5e1;
+    font-size: 0.85rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .sim-table {
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #475569;
+    font-size: 0.75rem;
+  }
+
+  /* Opção A — ícones somente, sem rótulo */
+  .toolbar-a {
+    display: flex;
+    gap: 6px;
+  }
+  .btn-icon {
+    background: transparent;
+    border: 1px solid #333333;
+    border-radius: 6px;
+    color: #94a3b8;
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .btn-icon:hover { background: #1e293b; border-color: #64748b; color: #e2e8f0; }
+
+  /* Opção B — ícone + rótulo de texto */
+  .toolbar-b {
+    display: flex;
+    gap: 6px;
+  }
+  .btn-label {
+    background: transparent;
+    border: 1px solid #333333;
+    border-radius: 6px;
+    color: #94a3b8;
+    height: 34px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+  .btn-label:hover { background: #1e293b; border-color: #64748b; color: #e2e8f0; }
+  .btn-label .ico { font-size: 14px; }
+
+  /* Opção C — grupo unificado (bordas compartilhadas) */
+  .toolbar-c {
+    display: flex;
+    border: 1px solid #333333;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .btn-group {
+    background: transparent;
+    border: none;
+    border-right: 1px solid #333333;
+    color: #94a3b8;
+    height: 34px;
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    transition: background 0.15s;
+    white-space: nowrap;
+  }
+  .btn-group:last-child { border-right: none; }
+  .btn-group:hover { background: #1e293b; color: #e2e8f0; }
+  .btn-group .ico { font-size: 14px; }
+</style>
+
+<div class="cards">
+
+  <!-- OPÇÃO A -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sim-bg">
+        <div class="sim-table-header">
+          <span class="sim-title">Detalhamento dos Dados</span>
+          <div class="toolbar-a">
+            <div class="btn-icon" title="Colunas">⚙️</div>
+            <div class="btn-icon" title="Salvar estado">💾</div>
+            <div class="btn-icon" title="Exportar CSV">⬇️</div>
+          </div>
+        </div>
+        <div class="sim-table">[ tabela AgGrid ]</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Ícones somente</h3>
+      <p>Compacto, tooltip no hover. Indicado quando o espaço horizontal é limitado. Requer que o usuário aprenda os ícones.</p>
+    </div>
+  </div>
+
+  <!-- OPÇÃO B -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sim-bg">
+        <div class="sim-table-header">
+          <span class="sim-title">Detalhamento dos Dados</span>
+          <div class="toolbar-b">
+            <div class="btn-label"><span class="ico">⚙️</span> Colunas</div>
+            <div class="btn-label"><span class="ico">💾</span> Salvar</div>
+            <div class="btn-label"><span class="ico">⬇️</span> Exportar CSV</div>
+          </div>
+        </div>
+        <div class="sim-table">[ tabela AgGrid ]</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Ícone + rótulo (recomendado)</h3>
+      <p>Botões individuais com ícone e texto. Mais claro para novos usuários. Semelhante ao padrão já usado abaixo da tabela (<em>Copiar tabela / Exportar CSV</em>).</p>
+    </div>
+  </div>
+
+  <!-- OPÇÃO C -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="sim-bg">
+        <div class="sim-table-header">
+          <span class="sim-title">Detalhamento dos Dados</span>
+          <div class="toolbar-c">
+            <div class="btn-group"><span class="ico">⚙️</span> Colunas</div>
+            <div class="btn-group"><span class="ico">💾</span> Salvar</div>
+            <div class="btn-group"><span class="ico">⬇️</span> CSV</div>
+          </div>
+        </div>
+        <div class="sim-table">[ tabela AgGrid ]</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Grupo unificado</h3>
+      <p>Bordas compartilhadas formam um componente único coeso. Visual mais moderno. Exige CSS mais elaborado para funcionar bem no Streamlit.</p>
+    </div>
+  </div>
+
+</div>

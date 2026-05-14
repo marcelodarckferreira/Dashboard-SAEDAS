@@ -123,7 +123,8 @@ def render_metric_cards(
     metrics: list, 
     is_toggle: bool = False, 
     active_labels: list[str] = None,
-    on_click_callback=None
+    on_click_callback=None,
+    fixed_columns: int | None = None,
 ) -> None:
     """
     Renderiza cards de métricas premium com suporte a links e interatividade.
@@ -164,59 +165,61 @@ def render_metric_cards(
         </style>
     """, unsafe_allow_html=True)
 
-    # Para manter a largura dos cards consistente (como na Home original),
-    # usamos st.columns(5) mesmo que haja menos métricas, a menos que is_toggle seja True.
-    num_cols = 5 if not is_toggle else len(normalized_metrics)
-    cols = st.columns(num_cols)
-    
-    for i, metric in enumerate(normalized_metrics):
-        if i >= len(cols): break
-        col = cols[i]
-        
-        label = str(metric.get("label", "")).upper()
-        value = metric.get("value", 0)
-        link = metric.get("link")
-        
-        try:
-            if isinstance(value, (int, float)):
-                value_fmt = f"{float(value):,.0f}".replace(",", ".")
-            else:
-                value_fmt = str(value)
-        except:
-            value_fmt = str(value)
+    # Padrão global dos indicadores gerais: grid fixo de 5 colunas.
+    num_cols = fixed_columns if fixed_columns is not None else 5
+    num_cols = max(1, int(num_cols))
 
-        with col:
-            if is_toggle:
-                is_active = label in [l.upper() for l in active_labels]
-                button_type = "primary" if is_active else "tertiary"
-                st.button(
-                    f"{label}\n\n**{value_fmt}**",
-                    key=f"btn_kpi_{label}_{value_fmt}_{i}",
-                    on_click=on_click_callback,
-                    args=(label,) if on_click_callback else None,
-                    type=button_type,
-                    use_container_width=True
-                )
-            else:
-                base_class = "home-metric-card"
-                state_class = "metric-card-static"
-                link_class = "home-metric-link" if link else ""
-                
-                card_content = f"""
-                <div class="{base_class} {state_class} {link_class}">
-                    <div class="home-metric-label">{label}</div>
-                    <div class="home-metric-value">{value_fmt}</div>
-                </div>
-                """
-                
-                if link:
-                    # target="_self" é crucial para navegação SPA no Streamlit
-                    st.markdown(
-                        f'<a href="{link}" target="_self" class="home-metric-link-wrapper">{card_content}</a>', 
-                        unsafe_allow_html=True
+    for row_start in range(0, len(normalized_metrics), num_cols):
+        row_metrics = normalized_metrics[row_start: row_start + num_cols]
+        cols = st.columns(num_cols)
+
+        for i, metric in enumerate(row_metrics):
+            col = cols[i]
+
+            label = str(metric.get("label", "")).upper()
+            value = metric.get("value", 0)
+            link = metric.get("link")
+
+            try:
+                if isinstance(value, (int, float)):
+                    value_fmt = f"{float(value):,.0f}".replace(",", ".")
+                else:
+                    value_fmt = str(value)
+            except:
+                value_fmt = str(value)
+
+            with col:
+                if is_toggle:
+                    is_active = label in [l.upper() for l in active_labels]
+                    button_type = "primary" if is_active else "secondary"
+                    st.button(
+                        f"{label}\n**{value_fmt}**",
+                        key=f"btn_kpi_{label}_{value_fmt}_{row_start}_{i}",
+                        on_click=on_click_callback,
+                        args=(label,) if on_click_callback else None,
+                        type=button_type,
+                        use_container_width=True
                     )
                 else:
-                    st.markdown(card_content, unsafe_allow_html=True)
+                    base_class = "home-metric-card"
+                    state_class = "metric-card-static"
+                    link_class = "home-metric-link" if link else ""
+
+                    card_content = f"""
+                    <div class="{base_class} {state_class} {link_class}">
+                        <div class="home-metric-label">{label}</div>
+                        <div class="home-metric-value">{value_fmt}</div>
+                    </div>
+                    """
+
+                    if link:
+                        # target="_self" é crucial para navegação SPA no Streamlit
+                        st.markdown(
+                            f'<a href="{link}" target="_self" class="home-metric-link-wrapper">{card_content}</a>', 
+                            unsafe_allow_html=True
+                        )
+                    else:
+                        st.markdown(card_content, unsafe_allow_html=True)
 
 def get_table_hover_styles():
     """Retorna estilos de hover (Legacy wrapper)."""

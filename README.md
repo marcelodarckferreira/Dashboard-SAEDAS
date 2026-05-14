@@ -58,7 +58,7 @@ app/
 ├── .streamlit/config.toml    # Configuração do Streamlit
 ├── exportar_dados_csv.sh     # Script de extração de dados via bcp
 └── fechamento_saedas.sh      # Script de fechamento de período via sqlcmd
-Dockerfile                    # Imagem Docker (python:3.12.6-slim)
+Dockerfile                    # Imagem Docker (python:3.12.13-slim-bookworm)
 docker-compose.yml            # Orquestração local
 requirements.txt              # Dependências Python
 ```
@@ -87,7 +87,17 @@ git clone <url-do-repositorio>
 cd SAEDAS
 ```
 
-### 2. Ambiente local (desenvolvimento)
+### 2. Via Docker (Padrão e Recomendado)
+
+Este é o método oficial de instalação para garantir que todas as dependências e versões de sistema (como bibliotecas gráficas e de charset) estejam sincronizadas.
+
+```bash
+docker compose up --build -d
+```
+
+### 3. Ambiente local (Apenas para Desenvolvimento)
+
+> ⚠️ **Atenção:** Ao instalar localmente, é obrigatório verificar possíveis conflitos de versões entre as bibliotecas do `requirements.txt` e o seu sistema operacional.
 
 ```bash
 python -m venv .venv
@@ -99,12 +109,6 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install -r requirements.txt
-```
-
-### 3. Via Docker (recomendado para produção)
-
-```bash
-docker compose up --build -d
 ```
 
 ---
@@ -216,6 +220,16 @@ crontab -e
 # 0 6 * * * /media/db/saedas/app/exportar_dados_csv.sh
 # 0 5 * * 1 /media/db/saedas/app/fechamento_saedas.sh
 ```
+
+---
+
+## Gestão de Dependências e Conflitos
+
+Para garantir a estabilidade do sistema, especialmente em ambiente Docker, seguimos estas regras:
+
+1. **Versões Fixas:** Todas as bibliotecas no `requirements.txt` devem ter versões fixas (`==`).
+2. **Compatibilidade:** Antes de adicionar uma nova biblioteca, verifique a compatibilidade com o Python 3.12 e se não há conflitos com o Streamlit ou AgGrid.
+3. **Mecanismos de Clipboard:** Devido ao ambiente headless do Docker, funcionalidades de "Copiar" devem ser implementadas via JavaScript (frontend) e não via bibliotecas de sistema (backend).
 
 ---
 

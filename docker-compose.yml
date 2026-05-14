@@ -10,8 +10,7 @@ services:
     ports:
       - "8501:8501"
     volumes:
-      - ./app/data:/SAEDAS/app/data
-      - ./app/assets:/SAEDAS/app/assets
+      - ./app:/SAEDAS/app
     environment:
       PYTHONUNBUFFERED: "1"
       TZ: America/Sao_Paulo

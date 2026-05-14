@@ -68,9 +68,6 @@ def carregar_dados_home():
     }
 
 
-
-
-
 def page_home():
     # Inicializa o estado global sincronizado (Anos e URGs)
     init_global_state()
@@ -167,7 +164,13 @@ def page_home():
                 --st-horizontal-block-gap: 0px !important;
                 justify-content: flex-end !important;
                 align-items: center !important;
-                padding-right: 2px !important;
+                padding-right: 6px !important;
+                overflow: visible !important;
+            }
+            .st-key-home_detail_toolbar div[data-testid="stDownloadButton"] {
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
             }
             .st-key-home_urg_actions_toolbar div[data-testid="stColumn"],
             .st-key-home_escola_actions_toolbar div[data-testid="stColumn"],
@@ -177,6 +180,7 @@ def page_home():
                 margin: 0 !important;
                 width: auto !important;
                 flex: 0 1 auto !important;
+                overflow: visible !important;
             }
             .st-key-home_urg_actions_toolbar button,
             .st-key-home_escola_actions_toolbar button,
@@ -206,6 +210,7 @@ def page_home():
                 border-right: none !important; /* Evita bordas duplas no meio */
             }
             /* O último botão sempre fecha a borda direita */
+            .st-key-home_detail_toolbar div[data-testid="stDownloadButton"] button,
             .st-key-download_csv_home_toolbar button,
             div[class*="st-key-download_"] button {
                 border-right: 1px solid #334155 !important;
@@ -215,7 +220,10 @@ def page_home():
             .st-key-home_escola_actions_toolbar button p,
             .st-key-home_ano_actions_toolbar button p,
             .st-key-home_detail_toolbar button p,
-            .st-key-home_detail_toolbar div[data-testid="stDownloadButton"] button p {
+            .st-key-home_detail_toolbar div[data-testid="stDownloadButton"] button p,
+            .st-key-home_toolbar_column_toggle button p,
+            .st-key-home_toolbar_copy button p,
+            .st-key-download_csv_home_toolbar button p {
                 white-space: nowrap !important;
                 margin: 0 !important;
                 display: inline-block !important;
@@ -243,6 +251,7 @@ def page_home():
             }
 
             /* 3. Último botão de QUALQUER grupo (Home ou Tabelas) */
+            .st-key-home_detail_toolbar div[data-testid="stDownloadButton"] button,
             .st-key-download_csv_home_toolbar button,
             div[class*="st-key-download_"] button {
                 border-radius: 0 6px 6px 0 !important;
@@ -304,6 +313,7 @@ def page_home():
     df, info = home_data["df"], home_data["info"]
 
     escola_ano_data = datasets["escola_ano"]
+    csv_file_escola_ano = escola_ano_data["csv"]
     df_escola_ano, info_escola_ano = (
         escola_ano_data["df"],
         escola_ano_data["info"],
@@ -370,9 +380,6 @@ def page_home():
         footer_personal()
 
         return
-
-    # SCHEMA_HOME já foi validado no load_csv; mensagens de alerta foram exibidas acima.
-
 
 
     # --- Filtros na Sidebar ---
@@ -489,7 +496,7 @@ def page_home():
         df_base_final = df_base_final[df_base_final["Ano"].isin(selected_years_comp)]
     else:
         # Se nenhum ano selecionado, o dashboard fica vazio por padrão
-        df_base_final = pd.DataFrame()
+        df_base_final = df_base_final.iloc[0:0]
         
     # 3. Filtro de URGs (Global - Vinculação Bidirecional Tabela/Sidebar)
     current_urgs = st.session_state["global_urgs"]
@@ -584,9 +591,9 @@ def page_home():
 
 
     primary_metrics = [
-        ("TOTAL DE ALUNOS (ESCOLA)", total_alunos_escola),
+        ("TOTAL DE ALUNOS", total_alunos_escola),
         ("ALUNOS ATENDIDOS", total_alunos),
-        ("ATENDIMENTOS (PROFISSIONAIS)", total_atendimentos_profissionais),
+        ("ATENDIMENTOS", total_atendimentos_profissionais),
     ]
     professional_metrics = [
         ("ATEND. PROFESSOR", total_professor),
@@ -598,17 +605,19 @@ def page_home():
     service_metrics = [
         ("ENCAMINHAMENTOS", total_encaminhamentos),
         ("EXAMES", total_exames),
-        ("DOSES DE VACINA APLICADAS", total_doses_vacina),
-        ("ALUNOS VACINADOS", total_vacinacao_alunos),
+        ("VACINADOS/APLICAÇÃO", f"{total_vacinacao_alunos}/{total_doses_vacina}"),
     ]
 
     # Mapeamento de labels para nomes de menu
     label_to_menu = {
         "ENCAMINHAMENTOS": "Encaminhamentos",
         "EXAMES": "Exames",
-        "DOSES DE VACINA APLICADAS": "Vacinação",
-        "ALUNOS VACINADOS": "Vacinação",
+        "VACINADOS/APLICAÇÃO": "Vacinação",
         "ATEND. MÉDICO": "Médico",
+        "ATEND. PROFESSOR": "Professor",
+        "ATEND. PSICÓLOGO": "Psicólogo",
+        "ATEND. ASSIST. SOCIAL": "Assistente Social",
+        "ATEND. ENFERMAGEM": "Enfermagem",
     }
 
     def prepare_metrics(raw_metrics):
@@ -632,13 +641,13 @@ def page_home():
 
     # --- NOVO: Tabela Comparativa de Performance por ANO ---
     st.subheader(f"Tabela Comparativa de Performance por ANO ({filtro_titulo})")
-    st.caption("Nota: As colunas '% Cobertura' representam o percentual de cada indicador sobre o TOTAL DE ALUNOS (ESCOLA) no respectivo ano.")
+    st.caption("Nota: As colunas '% Cobertura' representam o percentual de cada indicador sobre o TOTAL DE ALUNOS no respectivo ano.")
 
     # Definição das métricas na ordem exata dos cards (rótulos)
     metric_definitions = [
-        {"key": "QtdAlunoEscola", "label": "TOTAL DE ALUNOS (ESCOLA)"},
+        {"key": "QtdAlunoEscola", "label": "TOTAL DE ALUNOS"},
         {"key": "QtdAluno", "label": "ALUNOS ATENDIDOS"},
-        {"key": "total_profissionais", "label": "ATENDIMENTOS (PROFISSIONAIS)"},
+        {"key": "total_profissionais", "label": "ATENDIMENTOS"},
         {"key": "QtdProfessor", "label": "ATEND. PROFESSOR"},
         {"key": "QtdPsicologo", "label": "ATEND. PSICÓLOGO"},
         {"key": "QtdAssistSocial", "label": "ATEND. ASSIST. SOCIAL"},
@@ -749,7 +758,7 @@ def page_home():
         for year in year_cols_existentes:
             # Localiza o valor de "TOTAL DE ALUNOS (ESCOLA)" para o ano atual para usar como denominador
             valor_base_cobertura = df_home_ano_exibir.loc[
-                df_home_ano_exibir["Descricao"] == "TOTAL DE ALUNOS (ESCOLA)", year
+                df_home_ano_exibir["Descricao"] == "TOTAL DE ALUNOS", year
             ].values
             
             total_alunos_ano = valor_base_cobertura[0] if len(valor_base_cobertura) > 0 else 0
@@ -920,26 +929,6 @@ def page_home():
                 if val in current_selected_urgs
             ]
 
-        selected_urgs_js = json.dumps(list(map(str, current_selected_urgs)))
-        urg_field_js = json.dumps(urg_field)
-        sync_selection_js = JsCode(
-            f"""
-            function(params) {{
-                const selectedUrgs = new Set({selected_urgs_js});
-                const urgField = {urg_field_js};
-
-                if (!params.api || !urgField) {{
-                    return;
-                }}
-
-                params.api.forEachNode(function(node) {{
-                    const rowUrg = node.data ? String(node.data[urgField] || '') : '';
-                    node.setSelected(selectedUrgs.has(rowUrg));
-                }});
-            }}
-            """
-        )
-
         grid_options = {
             "columnDefs": column_defs,
             "defaultColDef": {
@@ -957,13 +946,43 @@ def page_home():
             "enableCellTextSelection": True,
             "suppressContextMenu": False,
             "copyHeadersToClipboard": True,
-            "onFirstDataRendered": sync_selection_js,
-            "onRowDataUpdated": sync_selection_js,
         }
         if pre_selected_rows:
             grid_options["initialState"] = {"rowSelection": pre_selected_rows}
 
-        # A altura é gerenciada pelo render_saedas_aggrid
+        selected_urgs_js = json.dumps(list(map(str, current_selected_urgs)))
+        urg_field_js = json.dumps(urg_field) if urg_field else "null"
+        sync_urg_selection_js = JsCode(
+            f"""
+            function(params) {{
+                const selectedUrgs = new Set({selected_urgs_js});
+                const urgField = {urg_field_js};
+                if (!params.api || !urgField) return;
+                params.api.forEachNode(function(node) {{
+                    const rowUrg = node.data ? String(node.data[urgField] || '') : '';
+                    node.setSelected(selectedUrgs.has(rowUrg));
+                }});
+            }}
+            """
+        )
+        grid_options["onFirstDataRendered"] = sync_urg_selection_js
+        grid_options["onRowDataUpdated"] = sync_urg_selection_js
+
+        # Chave estável: só muda quando a sidebar é a fonte da mudança.
+        # Quando a tabela é a fonte, usamos a chave anterior para preservar a seleção do usuário.
+        suppress_urg_key_change = st.session_state.pop("_suppress_urg_key_change", False)
+        new_urg_key_suffix = "|".join(sorted(map(str, current_selected_urgs))) or "all"
+        if suppress_urg_key_change:
+            urg_grid_key = st.session_state.get("_urg_grid_key_cache", f"urg_home_aggrid_{new_urg_key_suffix}")
+        else:
+            urg_grid_key = f"urg_home_aggrid_{new_urg_key_suffix}"
+            st.session_state["_urg_grid_key_cache"] = urg_grid_key
+
+        # Se a sidebar mudou a seleção, a instância da grade acabou de ser recriada.
+        # Nesse ciclo, o payload de selected_rows pode refletir o estado antigo antes do JS
+        # reaplicar a seleção visual; ignoramos para não desfazer a sidebar.
+        urg_key_changed = st.session_state.get("_prev_urg_grid_key") != urg_grid_key
+        st.session_state["_prev_urg_grid_key"] = urg_grid_key
 
         with st.container():
             df_cmp_urg_export = (
@@ -980,35 +999,34 @@ def page_home():
             aggrid_response = render_saedas_aggrid(
                 df_cmp_urg_body,
                 grid_options=grid_options,
-                key=(
-                    "urg_table_selection_home_aggrid_"
-                    + ("|".join(sorted(map(str, current_selected_urgs))) or "all")
-                ),
+                key=urg_grid_key,
                 update_mode=GridUpdateMode.SELECTION_CHANGED,
-                incluir_total=bool(footer_rows)
+                incluir_total=bool(footer_rows),
             )
             st.markdown('</div>', unsafe_allow_html=True)
 
         selected_rows = aggrid_response.get("selected_rows", None)
         has_grid_selection_payload = selected_rows is not None
-        if has_grid_selection_payload:
+        if has_grid_selection_payload and not urg_key_changed:
             if isinstance(selected_rows, pd.DataFrame):
                 selected_rows = selected_rows.to_dict(orient="records")
             elif isinstance(selected_rows, dict):
                 selected_rows = [selected_rows]
 
-        if urg_field and has_grid_selection_payload:
-            selected_urgs = [
-                row.get(urg_field)
-                for row in selected_rows
-                if row.get(urg_field) and row.get(urg_field) != "TOTAL"
-            ]
+            if urg_field:
+                selected_urgs = [
+                    row.get(urg_field)
+                    for row in selected_rows
+                    if row.get(urg_field) and row.get(urg_field) != "TOTAL"
+                ]
 
-            if set(selected_urgs) != set(current_selected_urgs):
-                st.session_state["global_urgs"] = selected_urgs
-                st.session_state["pending_sidebar_urg_filter"] = selected_urgs
-                st.session_state["last_interaction_source"] = "table"
-                st.rerun()
+                if set(selected_urgs) != set(current_selected_urgs):
+                    st.session_state["global_urgs"] = selected_urgs
+                    st.session_state["pending_sidebar_urg_filter"] = selected_urgs
+                    st.session_state["last_interaction_source"] = "table"
+                    # Suprime a mudança de chave no próximo rerun para manter o grid estável
+                    st.session_state["_suppress_urg_key_change"] = True
+                    st.rerun()
     else:
         st.info("Dados insuficientes para gerar a tabela comparativa de URGs.")
 
@@ -1054,26 +1072,6 @@ def page_home():
                     if val in selected_escolas_sidebar
                 ]
 
-            selected_escolas_js = json.dumps(list(map(str, selected_escolas_sidebar)))
-            escola_field_js = json.dumps(escola_field)
-            sync_escola_selection_js = JsCode(
-                f"""
-                function(params) {{
-                    const selectedEscolas = new Set({selected_escolas_js});
-                    const escolaField = {escola_field_js};
-
-                    if (!params.api || !escolaField) {{
-                        return;
-                    }}
-
-                    params.api.forEachNode(function(node) {{
-                        const rowEscola = node.data ? String(node.data[escolaField] || '') : '';
-                        node.setSelected(selectedEscolas.has(rowEscola));
-                    }});
-                }}
-                """
-            )
-
             escola_grid_options = {
                 "columnDefs": escola_column_defs,
                 "defaultColDef": {
@@ -1091,15 +1089,29 @@ def page_home():
                 "enableCellTextSelection": True,
                 "suppressContextMenu": False,
                 "copyHeadersToClipboard": True,
-                "onFirstDataRendered": sync_escola_selection_js,
-                "onRowDataUpdated": sync_escola_selection_js,
             }
             if escola_pre_selected_rows:
                 escola_grid_options["initialState"] = {
                     "rowSelection": escola_pre_selected_rows
                 }
 
-            # A altura é gerenciada pelo render_saedas_aggrid
+            selected_escolas_js = json.dumps(list(map(str, selected_escolas_sidebar)))
+            escola_field_js = json.dumps(escola_field) if escola_field else "null"
+            sync_escola_selection_js = JsCode(
+                f"""
+                function(params) {{
+                    const selectedEscolas = new Set({selected_escolas_js});
+                    const escolaField = {escola_field_js};
+                    if (!params.api || !escolaField) return;
+                    params.api.forEachNode(function(node) {{
+                        const rowEscola = node.data ? String(node.data[escolaField] || '') : '';
+                        node.setSelected(selectedEscolas.has(rowEscola));
+                    }});
+                }}
+                """
+            )
+            escola_grid_options["onFirstDataRendered"] = sync_escola_selection_js
+            escola_grid_options["onRowDataUpdated"] = sync_escola_selection_js
 
             df_cmp_escola_export = (
                 pd.concat(
@@ -1112,21 +1124,35 @@ def page_home():
             with st.container(key="home_escola_actions_toolbar"):
                 render_table_toolbar(df_cmp_escola_export, "comparativo_escola_home.csv", "home_escola_table")
             st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
+
+            # Chave estável para Escola
+            suppress_escola_key_change = st.session_state.pop("_suppress_escola_key_change", False)
+            new_escola_key_suffix = "|".join(sorted(map(str, selected_escolas_sidebar))) or "all"
+            if suppress_escola_key_change:
+                escola_grid_key = st.session_state.get("_escola_grid_key_cache", f"escola_home_aggrid_{new_escola_key_suffix}")
+            else:
+                escola_grid_key = f"escola_home_aggrid_{new_escola_key_suffix}"
+                st.session_state["_escola_grid_key_cache"] = escola_grid_key
+
+            # Evita que uma resposta stale da grade recém-renderizada apague a seleção
+            # escolhida na sidebar antes do JS reaplicar os checkboxes.
+            escola_key_changed = (
+                st.session_state.get("_prev_escola_grid_key") != escola_grid_key
+            )
+            st.session_state["_prev_escola_grid_key"] = escola_grid_key
+
             escola_aggrid_response = render_saedas_aggrid(
                 df_cmp_escola_body,
                 grid_options=escola_grid_options,
-                key=(
-                    "escola_table_selection_home_aggrid_"
-                    + ("|".join(sorted(map(str, selected_escolas_sidebar))) or "all")
-                ),
+                key=escola_grid_key,
                 update_mode=GridUpdateMode.SELECTION_CHANGED,
                 incluir_total=bool(escola_footer_rows),
-                max_rows=10
+                max_rows=10,
             )
             st.markdown("</div>", unsafe_allow_html=True)
 
             escola_selected_rows = escola_aggrid_response.get("selected_rows", None)
-            if escola_selected_rows is not None:
+            if escola_selected_rows is not None and not escola_key_changed:
                 if isinstance(escola_selected_rows, pd.DataFrame):
                     escola_selected_rows = escola_selected_rows.to_dict(
                         orient="records"
@@ -1134,19 +1160,18 @@ def page_home():
                 elif isinstance(escola_selected_rows, dict):
                     escola_selected_rows = [escola_selected_rows]
 
-            if escola_field and escola_selected_rows is not None:
-                selected_escolas = [
-                    row.get(escola_field)
-                    for row in escola_selected_rows
-                    if row.get(escola_field) and row.get(escola_field) != "TOTAL"
-                ]
+                if escola_field:
+                    selected_escolas = [
+                        row.get(escola_field)
+                        for row in escola_selected_rows
+                        if row.get(escola_field) and row.get(escola_field) != "TOTAL"
+                    ]
 
-                if set(selected_escolas) != set(selected_escolas_sidebar):
-                    st.session_state["pending_sidebar_escola_filter"] = (
-                        selected_escolas
-                    )
-                    st.session_state["last_interaction_source"] = "table_school"
-                    st.rerun()
+                    if set(selected_escolas) != set(selected_escolas_sidebar):
+                        st.session_state["pending_sidebar_escola_filter"] = selected_escolas
+                        st.session_state["last_interaction_source"] = "table_school"
+                        st.session_state["_suppress_escola_key_change"] = True
+                        st.rerun()
 
             st.caption(
                 "Nota: Clique em qualquer linha de Escola para filtrar o restante do dashboard. "
@@ -2554,42 +2579,39 @@ def page_home():
                 st.markdown('<div class="column-toggle-active"></div>', unsafe_allow_html=True)
 
             with st.container(key="home_detail_toolbar"):
-                # Layout manual de colunas para garantir agrupamento sem gaps (CSS acima cuida do resto)
-                _, col_btns = st.columns([0.55, 0.45])
-                with col_btns:
-                    inner_cols = st.columns([0.34, 0.33, 0.31], gap=None)
-                    with inner_cols[0]:
-                        if st.button(
-                            "⚙️ Colunas",
-                            key="home_toolbar_column_toggle",
-                            help="Mostrar/ocultar colunas da tabela",
-                            use_container_width=True
-                        ):
-                            st.session_state["home_show_column_selector"] = not _colunas_ativo
-                    
-                    with inner_cols[1]:
-                        if st.button(
-                            "📋 Copiar",
-                            key="home_toolbar_copy",
-                            help="Copiar tabela para área de transferência (Excel)",
-                            use_container_width=True
-                        ):
-                            try:
-                                df_display_for_copy.to_clipboard(index=False, excel=True)
-                                st.toast("Tabela copiada. Cole no Excel com Ctrl+V.")
-                            except Exception as _copy_exc:
-                                st.toast(f"Não foi possível copiar: {_copy_exc}", icon="❌")
+                _, col1, col2, col3 = st.columns([0.55, 0.15, 0.15, 0.15])
+                with col1:
+                    if st.button(
+                        "⚙️ Colunas",
+                        key="home_toolbar_column_toggle",
+                        help="Mostrar/ocultar colunas da tabela",
+                        use_container_width=True
+                    ):
+                        st.session_state["home_show_column_selector"] = not _colunas_ativo
 
-                    with inner_cols[2]:
-                        st.download_button(
-                            label="⬇️ CSV",
-                            data=csv_visible_data,
-                            file_name="detalhamento_home.csv",
-                            mime="text/csv",
-                            key="download_csv_home_toolbar",
-                            help="Exportar tabela como CSV",
-                            use_container_width=True
-                        )
+                with col2:
+                    if st.button(
+                        "📋 Copiar",
+                        key="home_toolbar_copy",
+                        help="Copiar tabela para área de transferência (Excel)",
+                        use_container_width=True
+                    ):
+                        try:
+                            df_display_for_copy.to_clipboard(index=False, excel=True)
+                            st.toast("Tabela copiada. Cole no Excel com Ctrl+V.")
+                        except Exception as _copy_exc:
+                            st.toast(f"Não foi possível copiar: {_copy_exc}", icon="❌")
+
+                with col3:
+                    st.download_button(
+                        label="⬇️ CSV",
+                        data=csv_visible_data,
+                        file_name="detalhamento_home.csv",
+                        mime="text/csv",
+                        key="download_csv_home_toolbar",
+                        help="Exportar tabela como CSV",
+                        use_container_width=True
+                    )
 
             if st.session_state["home_show_column_selector"]:
                 with st.container(key="home_columns_panel", border=True):
@@ -2744,4 +2766,4 @@ def page_home():
     footer_personal()
 
 
-# streamlit run app.py
+# streamlit run main.py

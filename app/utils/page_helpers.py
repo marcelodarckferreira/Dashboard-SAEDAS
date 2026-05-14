@@ -3,6 +3,7 @@ import plotly.express as px
 import streamlit as st
 import re
 import numpy as np
+import json
 from st_aggrid import JsCode, AgGrid, GridUpdateMode
 
 from app.utils.styles import render_metric_cards, apply_saedas_design
@@ -22,9 +23,6 @@ def render_section_divider():
     """Renderiza um divisor visual padrão com espaçamento otimizado."""
     st.markdown(" ")
     st.markdown("---")
-
-
-
 
 
 def prepare_nutricao_aluno_table(
@@ -236,10 +234,11 @@ def _urg_sort_key(urg_name: str) -> int:
 
 def render_grouped_bar_anual(df, value_col, titulo, x_col="URG", orientation="v"):
     """Render bar chart for a single category grouped by year, vertical or horizontal."""
-    evolucao = df.groupby([x_col, "Ano"])[value_col].sum().reset_index()
-    if evolucao.empty:
-        st.info("Nenhum dado para exibir no gráfico.")
+    if df is None or df.empty or x_col not in df.columns or "Ano" not in df.columns or value_col not in df.columns:
+        st.info("Nenhum dado disponível para exibir o gráfico.")
         return
+
+    evolucao = df.groupby([x_col, "Ano"])[value_col].sum().reset_index()
 
     # Escala cromática: Paleta categórica
     color_map = {
@@ -326,14 +325,17 @@ def render_top_por_urg(df, value_col, titulo, label_col, table_key=None, active_
         st.info("Nenhum dado para exibir com os filtros atuais.")
         return
 
-    urgs_aplicadas = df["URG"].unique()
-    if len(urgs_aplicadas) != 1:
+    urgs_aplicadas = df["URG"].dropna().unique()
+    if len(urgs_aplicadas) == 0:
         st.subheader(titulo)
-        st.info("Selecione apenas uma URG na sidebar para detalhar.")
+        st.info("Selecione ao menos uma URG na sidebar para detalhar.")
         return
-
-    urg_selecionada = urgs_aplicadas[0]
-    st.subheader(f"{titulo} (URG {urg_selecionada})")
+    if len(urgs_aplicadas) == 1:
+        urg_selecionada = urgs_aplicadas[0]
+        st.subheader(f"{titulo} (URG {urg_selecionada})")
+    else:
+        st.subheader(f"{titulo} ({len(urgs_aplicadas)} URGs selecionadas)")
+        urg_selecionada = "múltiplas URGs"
 
     has_ano = "Ano" in df.columns
     groupby_cols = ["Ano", label_col] if has_ano else [label_col]
@@ -379,32 +381,149 @@ def render_top_por_urg(df, value_col, titulo, label_col, table_key=None, active_
         st.markdown(f"### Tabela Comparativa de {label_col} por Ano")
         df_cmp = build_comparativo_anual(df, label_col, value_col, active_row_value=active_row_value)
         if df_cmp is not None:
-            kwargs = {
-                "use_container_width": True,
-                "hide_index": True
+            df_cmp_aggrid, column_defs, column_map = prepare_comparativo_aggrid_data(
+                df_cmp, include_selection_column=bool(table_key)
+            )
+            df_body, footer_rows = split_aggrid_footer(df_cmp_aggrid)
+            label_field = next(
+                (f for f, col in column_map.items() if col == label_col or col == (label_col, "")),
+                None
+            )
+
+            grid_options = {
+                "columnDefs": column_defs,
+                "defaultColDef": {
+                    "resizable": True,
+                    "sortable": True,
+                    "filter": False,
+                    "suppressMenu": True,
+                },
+                "pinnedBottomRowData": footer_rows,
             }
             if table_key:
-                kwargs["on_select"] = on_select
-                kwargs["selection_mode"] = selection_mode
-                kwargs["key"] = table_key
-                
+                grid_options["rowSelection"] = "single" if selection_mode == "single-row" else "multiple"
+                grid_options["rowMultiSelectWithClick"] = selection_mode != "single-row"
+                active_values = active_row_value if isinstance(active_row_value, list) else ([active_row_value] if active_row_value else [])
+                active_values = [str(v) for v in active_values if v not in (None, "")]
+                pre_selected_rows = []
+                if label_field and active_values:
+                    pre_selected_rows = [
+                        idx
+                        for idx, val in enumerate(df_body[label_field].tolist())
+                        if str(val) in active_values
+                    ]
+                selected_values_js = json.dumps(active_values)
+                label_field_js = json.dumps(label_field) if label_field else "null"
+                sync_selection_js = JsCode(
+                    f"""
+                    function(params) {{
+                        const selectedValues = new Set({selected_values_js});
+                        const labelField = {label_field_js};
+                        if (!params.api || !labelField) return;
+                        params.api.forEachNode(function(node) {{
+                            const rowLabel = node.data ? String(node.data[labelField] || '') : '';
+                            node.setSelected(selectedValues.has(rowLabel));
+                        }});
+                    }}
+                    """
+                )
+                grid_options["onFirstDataRendered"] = sync_selection_js
+                grid_options["onRowDataUpdated"] = sync_selection_js
+                if pre_selected_rows:
+                    grid_options["initialState"] = {"rowSelection": pre_selected_rows}
+
+            df_export = (
+                pd.concat([df_body, pd.DataFrame(footer_rows)], ignore_index=True)
+                if footer_rows
+                else df_body.copy()
+            )
+            toolbar_container_key = f"{table_key}_actions_toolbar" if table_key else f"{label_col.lower()}_actions_toolbar"
+            with st.container(key=toolbar_container_key):
+                render_table_toolbar(
+                    df_export,
+                    f"top_{label_col.lower()}_por_urg.csv",
+                    f"{table_key or label_col}_toolbar",
+                )
+
+            wrapper_class = "selection-master-table" if table_key else "st-table-with-total"
+            st.markdown(f'<div class="{wrapper_class}">', unsafe_allow_html=True)
+            active_values_for_key = active_row_value if isinstance(active_row_value, list) else ([active_row_value] if active_row_value else [])
+            active_values_for_key = [str(v) for v in active_values_for_key if v not in (None, "")]
+            table_state_suffix = "|".join(sorted(active_values_for_key)) if active_values_for_key else "all"
+            aggrid_response = render_saedas_aggrid(
+                df_body,
+                grid_options=grid_options,
+                key=f"{table_key or label_col}_aggrid_top_urg_{table_state_suffix}",
+                update_mode=GridUpdateMode.SELECTION_CHANGED if table_key else GridUpdateMode.NO_UPDATE,
+                incluir_total=bool(footer_rows),
+            )
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            if table_key and label_field:
+                selected_rows = aggrid_response.get("selected_rows", None)
+                has_grid_selection_payload = selected_rows is not None
+                if isinstance(selected_rows, pd.DataFrame):
+                    selected_rows = selected_rows.to_dict(orient="records")
+                elif isinstance(selected_rows, dict):
+                    selected_rows = [selected_rows]
+                if has_grid_selection_payload:
+                    selected_rows = selected_rows or []
+                    selected_values = [
+                        row.get(label_field)
+                        for row in selected_rows
+                        if row.get(label_field) not in (None, "", "TOTAL")
+                    ]
+                    # Guard: if grid returned empty but sidebar already has active values,
+                    # the grid just re-rendered (new key) and JS hasn't fired yet — skip overwrite.
+                    if selected_values or not active_values:
+                        st.session_state[f"{table_key}__selected_values"] = selected_values
+                    selected_indexes = [
+                        idx
+                        for idx, value in enumerate(df_cmp_aggrid[label_field].tolist())
+                        if value in selected_values
+                    ]
+                    st.session_state[table_key] = {"selection": {"rows": selected_indexes}}
+
+            urg_scope_text = (
+                f"da URG {urg_selecionada}"
+                if len(urgs_aplicadas) == 1
+                else "das URGs selecionadas"
+            )
             if table_key:
-                with st.container():
-                    st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
-                    st.dataframe(df_cmp, **kwargs)
-                    st.markdown('</div>', unsafe_allow_html=True)
-                st.caption(f"Nota: Clique em qualquer linha de {label_col} para filtrar todo o restante do dashboard. As colunas '% Total' representam o percentual sobre o total da URG {urg_selecionada} no respectivo ano.")
+                st.caption(
+                    f"Nota: Clique em qualquer linha de {label_col} para filtrar todo o restante do dashboard. "
+                    f"As colunas '% Total' representam o percentual sobre o total {urg_scope_text} no respectivo ano."
+                )
             else:
-                with st.container():
-                    st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
-                    st.dataframe(df_cmp, **kwargs)
-                    st.markdown('</div>', unsafe_allow_html=True)
-                st.caption(f"Nota: Esta tabela utiliza os filtros da sidebar. As colunas '% Total' representam o percentual sobre o total da URG {urg_selecionada} no respectivo ano.")
+                st.caption(
+                    f"Nota: Esta tabela utiliza os filtros da sidebar. "
+                    f"As colunas '% Total' representam o percentual sobre o total {urg_scope_text} no respectivo ano."
+                )
             return df_cmp
     else:
-        st.dataframe(
-            group.sort_values(value_col, ascending=False), use_container_width=True, hide_index=True
+        group_sorted = group.sort_values(value_col, ascending=False).reset_index(drop=True)
+        gb = {
+            "defaultColDef": {
+                "resizable": True,
+                "sortable": True,
+                "filter": False,
+                "suppressMenu": True,
+            }
+        }
+        with st.container(key=f"{label_col.lower()}_simple_actions_toolbar"):
+            render_table_toolbar(
+                group_sorted,
+                f"top_{label_col.lower()}_por_urg.csv",
+                f"{label_col}_simple_top_urg",
+            )
+        st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
+        render_saedas_aggrid(
+            group_sorted,
+            grid_options=gb,
+            key=f"{label_col}_top_urg_simple_aggrid",
+            update_mode=GridUpdateMode.NO_UPDATE,
         )
+        st.markdown("</div>", unsafe_allow_html=True)
     return None
 
 
@@ -718,6 +837,7 @@ def render_saedas_aggrid(
     update_mode=GridUpdateMode.NO_UPDATE, 
     incluir_total: bool = False,
     max_rows: int = 20,
+    min_height: int | None = None,
     **kwargs
 ):
     """
@@ -734,6 +854,8 @@ def render_saedas_aggrid(
         incluir_total=incluir_total, 
         max_rows=max_rows
     )
+    if min_height is not None:
+        grid_height = max(grid_height, min_height)
 
     # 2. Definição de Estilo Padrão (Design System)
     default_custom_css = {
@@ -763,7 +885,10 @@ def render_saedas_aggrid(
     }
     
     # Mescla CSS customizado se fornecido
-    custom_css = kwargs.get("custom_css", default_custom_css)
+    custom_css = dict(default_custom_css)
+    extra_custom_css = kwargs.get("custom_css")
+    if isinstance(extra_custom_css, dict):
+        custom_css.update(extra_custom_css)
 
     # 3. Renderização
     return AgGrid(
@@ -791,10 +916,46 @@ def render_table_toolbar(df_export: pd.DataFrame, file_name: str, key_prefix: st
     with col_copy:
         if st.button("📋 Copiar", key=f"copy_{key_prefix}", help="Copiar tabela para a área de transferência"):
             try:
-                df_export.to_clipboard(index=False, excel=True)
-                st.toast("Tabela copiada com sucesso!")
+                # Geramos o texto em formato TSV (Tab-Separated Values) que é o padrão esperado pelo Excel
+                table_text = df_export.to_csv(index=False, sep="\t")
+                
+                # Injeção de JavaScript para realizar a cópia no lado do cliente (navegador)
+                st.components.v1.html(
+                    f"""
+                    <script>
+                    async function copyToClipboard() {{
+                        const text = {json.dumps(table_text)};
+                        try {{
+                            if (navigator.clipboard && navigator.clipboard.writeText) {{
+                                await navigator.clipboard.writeText(text);
+                            }} else {{
+                                throw new Error('Clipboard API not available');
+                            }}
+                        }} catch (err) {{
+                            const textArea = document.createElement("textarea");
+                            textArea.value = text;
+                            textArea.style.position = "fixed";
+                            textArea.style.left = "-9999px";
+                            textArea.style.top = "0";
+                            document.body.appendChild(textArea);
+                            textArea.focus();
+                            textArea.select();
+                            try {{
+                                document.execCommand('copy');
+                            }} catch (copyErr) {{
+                                console.error('Erro no fallback de cópia:', copyErr);
+                            }}
+                            document.body.removeChild(textArea);
+                        }}
+                    }}
+                    copyToClipboard();
+                    </script>
+                    """,
+                    height=0
+                )
+                st.toast("Tabela copiada com sucesso!", icon="✅")
             except Exception as exc:
-                st.toast(f"Erro ao copiar: {exc}", icon="❌")
+                st.toast(f"Erro ao processar cópia: {exc}", icon="❌")
                 
     with col_csv:
         st.download_button(

@@ -1,69 +1,98 @@
-import json
+from app.utils.page_helpers import render_section_divider
 import re
-import pandas as pd
-import streamlit as st
 import datetime
+
+import pandas as pd
+import plotly.express as px
+import streamlit as st
 from urllib.parse import urlencode
 
+import json
+from st_aggrid import GridUpdateMode, JsCode
 from components.footer_personal import footer_personal
 from components.sidebar_filters import sidebar_filters
 from app.utils.data_loader import load_csv
-from st_aggrid import GridOptionsBuilder, GridUpdateMode, JsCode
 from app.utils.page_helpers import (
     filter_by_sidebar_selections,
     build_comparativo_anual,
+    render_metric,
     render_top_por_urg,
     format_filters_applied,
-    render_grouped_bar_anual,
-    toggle_multiselect_value,
-    render_section_divider,
     prepare_comparativo_aggrid_data,
+    render_saedas_aggrid,
     split_aggrid_footer,
     render_table_toolbar,
-    render_saedas_aggrid,
 )
-from app.utils.state_manager import init_global_state, sync_home_to_sidebar
-from app.utils.schemas import SCHEMA_EXAME, SCHEMA_EXAME_ALUNO, SCHEMA_EXAME_ANO
-from app.utils.styles import apply_global_css, render_metric_cards, apply_saedas_design
+from app.utils.state_manager import init_global_state, sync_home_to_sidebar, sync_home_urg_to_sidebar
+from app.utils.schemas import SCHEMA_ENFERMAGEM, SCHEMA_ENFERMAGEM_ALUNO, SCHEMA_ENFERMAGEM_ANO
+from app.utils.styles import apply_global_css, render_metric_cards, apply_saedas_design, build_row_style_fn, get_table_hover_styles
 
 
-def carregar_dados_exame():
-    csv_file = "data/DashboardExame.csv"
-    df, info = load_csv(csv_file, expected_cols=SCHEMA_EXAME)
+# ── Utilitários de ordenação por numeral romano ───────────────────────────────
+def _roman_to_int(s: str) -> int:
+    """Converte numeral romano (string) para inteiro."""
+    vals = {"I": 1, "V": 5, "X": 10, "L": 50, "C": 100, "D": 500, "M": 1000}
+    result, prev = 0, 0
+    for ch in reversed(s.upper()):
+        v = vals.get(ch, 0)
+        result += v if v >= prev else -v
+        prev = v
+    return result
 
-    csv_file_aluno = "data/DashboardExameAluno.csv"
+
+def _urg_sort_key(urg_name: str) -> int:
+    """Extrai o numeral romano do nome da URG e retorna seu valor inteiro.
+
+    Exemplos:
+        'URG I-CENTRO'          → 1
+        'URG VIII-MIGUEL COUTO' → 8
+        'URG IX-TINGUA'         → 9
+    """
+    m = re.search(r"URG\s+([IVXLCDM]+)", str(urg_name), re.IGNORECASE)
+    return _roman_to_int(m.group(1)) if m else 999
+
+
+def carregar_dados_enfermagem():
+    csv_file = "data/DashboardEnfermagem.csv"
+    df, info = load_csv(csv_file, expected_cols=SCHEMA_ENFERMAGEM)
+
+    csv_file_aluno = "data/DashboardEnfermagemAluno.csv"
     df_aluno_raw, info_aluno = load_csv(
-        csv_file_aluno, expected_cols=SCHEMA_EXAME_ALUNO
+        csv_file_aluno, expected_cols=SCHEMA_ENFERMAGEM_ALUNO
     )
 
-    csv_file_ano = "data/DashboardExameAno.csv"
-    df_ano, info_ano = load_csv(csv_file_ano, expected_cols=SCHEMA_EXAME_ANO)
+    csv_file_ano = "data/DashboardEnfermagemAno.csv"
+    df_ano, info_ano = load_csv(csv_file_ano, expected_cols=SCHEMA_ENFERMAGEM_ANO)
+
+    from app.utils.schemas import SCHEMA_HOME
+    df_home, _ = load_csv("data/DashboardHome.csv", expected_cols=SCHEMA_HOME)
 
     return {
         "principal": {"df": df, "info": info, "csv": csv_file},
         "aluno": {"df": df_aluno_raw, "info": info_aluno, "csv": csv_file_aluno},
         "ano": {"df": df_ano, "info": info_ano, "csv": csv_file_ano},
+        "home": {"df": df_home},
     }
 
 
-def page_exame():
-    def toggle_regulacao(reg_name):
-        current = st.session_state.get("exame_regulacao_multiselect", [])
-        st.session_state["exame_regulacao_multiselect"] = (
-            toggle_multiselect_value(current, reg_name)
-        )
-
+def page_enfermagem():
     init_global_state()
+    apply_global_css()
 
-    st.title("Visão Geral dos Exames (Regulação)")
-    st.markdown("Resumo consolidado das ações realizadas por ano, URG e equipe técnica.")
+    st.title("Visão Geral dos Atendimentos de Enfermagem")
+    st.markdown(
+        "Resumo consolidado dos atendimentos de enfermagem realizados por ano, URG e escola."
+    )
     st.markdown(
         """
         <style>
+            /* Container Principal - Ajuste de Espaçamento Vertical */
             .st-key-massive_year_selector {
                 margin-top: -1.5rem !important;
                 margin-bottom: 1rem !important;
             }
+
+            /* Alvo em QUALQUER botão dentro do container do seletor */
             .st-key-massive_year_selector button {
                 height: 56px !important;
                 min-width: 120px !important;
@@ -74,15 +103,20 @@ def page_exame():
                 transition: all 0.3s ease !important;
                 margin: 0 !important;
             }
+
+            /* Arredondamento apenas nas extremidades do GRUPO */
             .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:first-of-type button,
             .st-key-massive_year_selector button:first-of-type {
                 border-radius: 10px 0 0 10px !important;
             }
+
             .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:last-of-type button,
             .st-key-massive_year_selector button:last-of-type {
                 border-radius: 0 10px 10px 0 !important;
                 border-right: 1px solid #334155 !important;
             }
+
+            /* Alvo em QUALQUER parágrafo ou texto dentro dos botões */
             .st-key-massive_year_selector button p,
             .st-key-massive_year_selector button span {
                 font-size: 1.85rem !important;
@@ -92,12 +126,15 @@ def page_exame():
                 margin: 0 !important;
                 padding: 0 !important;
             }
+
+            /* Estado Ativo */
             .st-key-massive_year_selector button[data-testid*="Active"],
             .st-key-massive_year_selector button[aria-pressed="true"] {
                 background-color: #3b82f6 !important;
                 border-color: #60a5fa !important;
                 box-shadow: none !important;
             }
+
             .st-key-massive_year_selector button[data-testid*="Active"] p,
             .st-key-massive_year_selector button[aria-pressed="true"] p {
                 color: #ffffff !important;
@@ -174,10 +211,10 @@ def page_exame():
                 border-color: #38bdf8 !important;
                 background: linear-gradient(135deg, rgba(56, 189, 248, 0.18) 0%, rgba(30, 64, 175, 0.22) 100%) !important;
             }
-            .st-key-exame_urg_actions_toolbar div[data-testid="stHorizontalBlock"],
-            .st-key-exame_ano_actions_toolbar div[data-testid="stHorizontalBlock"],
-            .st-key-exame_aluno_actions_toolbar div[data-testid="stHorizontalBlock"],
-            .st-key-escola_table_selection_exame_actions_toolbar div[data-testid="stHorizontalBlock"] {
+            .st-key-enfermagem_urg_actions_toolbar div[data-testid="stHorizontalBlock"],
+            .st-key-escola_table_selection_enfermagem_actions_toolbar div[data-testid="stHorizontalBlock"],
+            .st-key-enfermagem_cobertura_actions_toolbar div[data-testid="stHorizontalBlock"],
+            .st-key-enfermagem_aluno_actions_toolbar div[data-testid="stHorizontalBlock"] {
                 gap: 0 !important;
                 --st-horizontal-block-gap: 0px !important;
                 justify-content: flex-end !important;
@@ -185,20 +222,20 @@ def page_exame():
                 padding-right: 6px !important;
                 overflow: visible !important;
             }
-            .st-key-exame_urg_actions_toolbar div[data-testid="stColumn"],
-            .st-key-exame_ano_actions_toolbar div[data-testid="stColumn"],
-            .st-key-exame_aluno_actions_toolbar div[data-testid="stColumn"],
-            .st-key-escola_table_selection_exame_actions_toolbar div[data-testid="stColumn"] {
+            .st-key-enfermagem_urg_actions_toolbar div[data-testid="stColumn"],
+            .st-key-escola_table_selection_enfermagem_actions_toolbar div[data-testid="stColumn"],
+            .st-key-enfermagem_cobertura_actions_toolbar div[data-testid="stColumn"],
+            .st-key-enfermagem_aluno_actions_toolbar div[data-testid="stColumn"] {
                 padding: 0 !important;
                 margin: 0 !important;
                 width: auto !important;
                 flex: 0 1 auto !important;
                 overflow: visible !important;
             }
-            .st-key-exame_urg_actions_toolbar button,
-            .st-key-exame_ano_actions_toolbar button,
-            .st-key-exame_aluno_actions_toolbar button,
-            .st-key-escola_table_selection_exame_actions_toolbar button {
+            .st-key-enfermagem_urg_actions_toolbar button,
+            .st-key-escola_table_selection_enfermagem_actions_toolbar button,
+            .st-key-enfermagem_cobertura_actions_toolbar button,
+            .st-key-enfermagem_aluno_actions_toolbar button {
                 background: transparent !important;
                 border: 1px solid #334155 !important;
                 border-right: none !important;
@@ -212,16 +249,16 @@ def page_exame():
                 align-items: center !important;
                 justify-content: center !important;
             }
-            .st-key-exame_urg_actions_toolbar div[class*="st-key-copy_"] button,
-            .st-key-exame_ano_actions_toolbar div[class*="st-key-copy_"] button,
-            .st-key-exame_aluno_actions_toolbar div[class*="st-key-copy_"] button,
-            .st-key-escola_table_selection_exame_actions_toolbar div[class*="st-key-copy_"] button {
+            .st-key-enfermagem_urg_actions_toolbar div[class*="st-key-copy_"] button,
+            .st-key-escola_table_selection_enfermagem_actions_toolbar div[class*="st-key-copy_"] button,
+            .st-key-enfermagem_cobertura_actions_toolbar div[class*="st-key-copy_"] button,
+            .st-key-enfermagem_aluno_actions_toolbar div[class*="st-key-copy_"] button {
                 border-radius: 6px 0 0 6px !important;
             }
-            .st-key-exame_urg_actions_toolbar div[class*="st-key-download_"] button,
-            .st-key-exame_ano_actions_toolbar div[class*="st-key-download_"] button,
-            .st-key-exame_aluno_actions_toolbar div[class*="st-key-download_"] button,
-            .st-key-escola_table_selection_exame_actions_toolbar div[class*="st-key-download_"] button {
+            .st-key-enfermagem_urg_actions_toolbar div[class*="st-key-download_"] button,
+            .st-key-escola_table_selection_enfermagem_actions_toolbar div[class*="st-key-download_"] button,
+            .st-key-enfermagem_cobertura_actions_toolbar div[class*="st-key-download_"] button,
+            .st-key-enfermagem_aluno_actions_toolbar div[class*="st-key-download_"] button {
                 border-right: 1px solid #334155 !important;
                 border-radius: 0 6px 6px 0 !important;
             }
@@ -229,12 +266,16 @@ def page_exame():
         """,
         unsafe_allow_html=True,
     )
-
     filters_placeholder = st.empty()
+    
+    
     render_section_divider()
     st.markdown(" ")
+    
+    # apply_global_css() — Já injetado no main.py
 
-    datasets = carregar_dados_exame()
+    datasets = carregar_dados_enfermagem()
+
     df, info = datasets["principal"]["df"], datasets["principal"]["info"]
     csv_file_aluno = datasets["aluno"]["csv"]
     df_aluno_raw, info_aluno = datasets["aluno"]["df"], datasets["aluno"]["info"]
@@ -242,7 +283,9 @@ def page_exame():
     df_ano, info_ano = datasets["ano"]["df"], datasets["ano"]["info"]
 
     if info_aluno["erros"]:
-        st.warning(f"Falha ao ler '{csv_file_aluno}': " + "; ".join(info_aluno["erros"]))
+        st.warning(
+            f"Falha ao ler '{csv_file_aluno}': " + "; ".join(info_aluno["erros"])
+        )
         df_aluno_raw = pd.DataFrame()
     elif info_aluno["alertas"]:
         st.info("; ".join(info_aluno["alertas"]))
@@ -265,35 +308,74 @@ def page_exame():
             "Ano": "Ano",
             "URG": "URG",
             "Escola": "Escola",
-            "Exame": "Regulacao",
+            "Descricao": "Atendimento",
             "Qtd": "Quantidade",
             "Tipo": "Tipo",
         }
     )
 
-    df_aluno = df_aluno_raw.rename(columns={"Exame": "Regulacao", "DtNasc": "DataNascimento"}).copy()
+    df_aluno = df_aluno_raw.rename(
+        columns={
+            "DtNasc": "DataNascimento",
+            "Profissional": "Profissional",
+        }
+    ).copy()
     if not df_aluno.empty and "DataNascimento" in df_aluno.columns:
-        df_aluno["DataNascimento"] = pd.to_datetime(df_aluno["DataNascimento"], errors="coerce")
+        df_aluno["DataNascimento"] = pd.to_datetime(
+            df_aluno["DataNascimento"], errors="coerce"
+        )
 
-    st.sidebar.title("Filtros - Exames")
+    df_ano_exibir = df_ano.copy() if not df_ano.empty else pd.DataFrame()
+
+    st.sidebar.title("Filtros - Enfermagem")
+
+    # Sincronização de Filtros Pendentes (Vindos de Interação com Tabelas)
     pending_table_urgs = st.session_state.pop("pending_sidebar_urg_filter", None)
     if pending_table_urgs is not None:
         st.session_state["sidebar_urg_filter"] = pending_table_urgs
+        st.session_state["global_urgs"] = pending_table_urgs
+        st.session_state["last_interaction_source"] = "table"
+
     pending_table_escolas = st.session_state.pop("pending_sidebar_escola_filter", None)
     if pending_table_escolas is not None:
         st.session_state["sidebar_escola_filter"] = pending_table_escolas
+        st.session_state["last_interaction_source"] = "table_escola"
 
-    df_filt_sidebar, selections = sidebar_filters(df, {"ano": True, "urg": True, "escola": True, "tipo": True})
+    df_filt_sidebar, selections = sidebar_filters(
+        df,
+        {"ano": True, "urg": True, "escola": True, "tipo": True},
+    )
 
+    # Rastreamento de Mudança na Sidebar vs Tabela para Escola
     current_sidebar_escolas = list(st.session_state.get("sidebar_escola_filter", []))
     prev_sidebar_escolas = list(st.session_state.get("_prev_sidebar_escola_filter", []))
     if set(map(str, current_sidebar_escolas)) != set(map(str, prev_sidebar_escolas)):
         st.session_state["last_interaction_source"] = "sidebar"
-        st.session_state["escola_table_selection_exame__selected_values"] = current_sidebar_escolas
+        st.session_state["escola_table_selection_enfermagem__selected_values"] = current_sidebar_escolas
     st.session_state["_prev_sidebar_escola_filter"] = current_sidebar_escolas
 
+    atendimento_col = "Atendimento"
+    atendimentos_disponiveis = (
+        sorted(df_filt_sidebar[atendimento_col].dropna().unique())
+        if atendimento_col in df_filt_sidebar.columns
+        else []
+    )
+    # Filtro de Atendimento removido conforme solicitação
+    atendimentos_selecionados = []
+
+    def toggle_atendimento(label: str) -> None:
+        """Alterna a seleção de um tipo de atendimento médico via KPI card."""
+        current = list(st.session_state.get("enfermagem_atendimento_multiselect", []))
+        if label in current:
+            current.remove(label)
+        else:
+            current.append(label)
+        st.session_state["enfermagem_atendimento_multiselect"] = current
+
+    # --- SELETOR TEMPORAL MESTRE (INDICADORES E PÁGINA) ---
     current_year = datetime.datetime.now().year
     years_options = sorted([current_year - i for i in range(5)], reverse=True)
+    
     with st.container(key="massive_year_selector"):
         st.segmented_control(
             label="Ano(s) de Referência:",
@@ -301,57 +383,59 @@ def page_exame():
             selection_mode="multi",
             key="home_year_buttons",
             on_change=sync_home_to_sidebar,
-            label_visibility="collapsed",
+            label_visibility="collapsed"
         )
+    # Sincroniza a variável local com o estado global
     selected_years_comp = st.session_state["global_years"]
 
-    regulacao_col = "Regulacao"
-    regulacoes_disponiveis = sorted(df_filt_sidebar[regulacao_col].dropna().unique()) if regulacao_col in df_filt_sidebar.columns else []
-    regulacoes_selecionadas = st.sidebar.multiselect(
-        "Selecione a(s) Regulação(ões):",
-        options=regulacoes_disponiveis,
-        placeholder="Todas",
-        key="exame_regulacao_multiselect",
-    )
-
+    # --- Aplicação Final dos Filtros (Fontes de Verdade Globais) ---
     df_base_sem_escola = df.copy()
+    
+    # 1. Filtro de Tipo (Instituição)
     if selections.get("tipo"):
         all_types = set(df["Tipo"].dropna().unique())
         if set(selections["tipo"]) != all_types:
             df_base_sem_escola = df_base_sem_escola[df_base_sem_escola["Tipo"].isin(selections["tipo"])]
+            
+    # 2. Filtro de Anos (Global)
     if selected_years_comp:
         df_base_sem_escola = df_base_sem_escola[df_base_sem_escola["Ano"].isin(selected_years_comp)]
     else:
         df_base_sem_escola = pd.DataFrame()
 
     df_base_final = df_base_sem_escola.copy()
+    # 3. Filtro de Escola (Cascata da Sidebar)
     if selections.get("escola"):
         all_schools = set(df["Escola"].dropna().unique())
         if set(selections["escola"]) != all_schools:
             df_base_final = df_base_final[df_base_final["Escola"].isin(selections["escola"])]
 
+    # 4. Filtro de URGs (Global - Vinculação Bidirecional)
     current_urgs = st.session_state["global_urgs"]
     if current_urgs:
-        df_master_no_reg = df_base_final[df_base_final["URG"].isin(current_urgs)]
+        df_master_no_atend = df_base_final[df_base_final["URG"].isin(current_urgs)]
     else:
-        df_master_no_reg = df_base_final.copy()
+        df_master_no_atend = df_base_final.copy()
 
-    if regulacoes_selecionadas:
-        df_master_filtrado = df_master_no_reg[df_master_no_reg["Regulacao"].isin(regulacoes_selecionadas)]
+    # 5. Filtro de Atendimento (Sidebar)
+    if atendimentos_selecionados:
+        df_master_filtrado = df_master_no_atend[df_master_no_atend[atendimento_col].isin(atendimentos_selecionados)]
     else:
-        df_master_filtrado = df_master_no_reg.copy()
+        df_master_filtrado = df_master_no_atend.copy()
 
+    # Substitui df_filt pelo filtrado final
     df_filt = df_master_filtrado.copy()
+
+    # --- Definições para Gráficos 'Top por URG' ---
+    # 1. Sem filtro de escola (mas com Tipo, Ano e URG)
     df_filt_no_escola = df_base_sem_escola.copy()
     if current_urgs:
         df_filt_no_escola = df_filt_no_escola[df_filt_no_escola["URG"].isin(current_urgs)]
-    df_filt_no_reg = df_master_no_reg.copy()
+        
+    # 2. Sem filtro de Atendimento (mas com Tipo, Ano, Escola e URG)
+    df_filt_no_atend = df_master_no_atend.copy()
 
-    if regulacoes_selecionadas:
-        selections["regulacao"] = regulacoes_selecionadas
-    else:
-        selections["regulacao"] = regulacoes_disponiveis
-
+    # --- Geração do filtro_titulo Dinâmico (Data-Driven UI) ---
     def get_filter_display_string_for_title(selected_items_list, all_available_items_list):
         if not selected_items_list or (all_available_items_list and set(map(str, selected_items_list)) == set(map(str, all_available_items_list))):
             return "Todos"
@@ -360,16 +444,18 @@ def page_exame():
     all_urgs_for_title = sorted(list(df["URG"].dropna().unique()))
     all_years_for_title = sorted(list(df["Ano"].dropna().unique())) if "Ano" in df.columns else []
     all_escolas_for_title = sorted(list(df["Escola"].dropna().unique()))
-    all_regs_for_title = sorted(list(df["Regulacao"].dropna().unique()))
-
+    
     current_urgs_for_title = st.session_state["global_urgs"] if st.session_state["global_urgs"] else all_urgs_for_title
+    current_escolas_for_title = selections.get("escola", [])
+    
     anos_str = get_filter_display_string_for_title(selected_years_comp, all_years_for_title)
     urgs_str = get_filter_display_string_for_title(current_urgs_for_title, all_urgs_for_title)
-    escolas_str = get_filter_display_string_for_title(selections.get("escola", []), all_escolas_for_title)
-    regs_str = get_filter_display_string_for_title(regulacoes_selecionadas if regulacoes_selecionadas else all_regs_for_title, all_regs_for_title)
+    escolas_str = get_filter_display_string_for_title(current_escolas_for_title, all_escolas_for_title)
+    
+    filtro_titulo = f"Anos: {anos_str} / URGs: {urgs_str} / Escolas: {escolas_str}"
 
-    st.markdown(f"### Indicadores Gerais (Anos: {anos_str} / URGs: {urgs_str} / Escolas: {escolas_str} / Regulações: {regs_str})")
-
+    st.markdown(f"### Indicadores Gerais ({filtro_titulo})")
+    
     filters_placeholder.markdown(
         "**Filtros aplicados:** "
         + format_filters_applied(
@@ -380,148 +466,44 @@ def page_exame():
                 ("urg", "URG", "URG"),
                 ("escola", "Escola", "Escola"),
                 ("tipo", "Tipo", "Tipo"),
-                ("regulacao", "Regulacao", "Regulação"),
             ],
         )
     )
+    urgs_aplicadas = selections.get("urg", [])
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Exportar dados")
-    csv = df_filt.to_csv(index=False, sep=";").encode("utf-8")
-    st.sidebar.download_button("Exportar CSV (Exame)", data=csv, file_name="dados_filtrados_exame.csv", mime="text/csv")
 
-    total_qtd = df_filt["Quantidade"].sum() if not df_filt.empty else 0
-    render_metric_cards([{"label": "TOTAL DE REGULAÇÕES (EXAMES)", "value": total_qtd}])
+
+    # --- PRIORIDADE 1 (TOPO): MÉTRICAS ---
+
+    # Calcula total de alunos (QtdAluno) do Home filtrado pelos anos do componente e seleções da sidebar
+    df_home = datasets["home"]["df"].copy()
+    total_alunos = 0
+    if not df_home.empty:
+        escolas_selecionadas = selections.get("escola", [])
+        if selected_years_comp and "Ano" in df_home.columns:
+            df_home = df_home[df_home["Ano"].isin(selected_years_comp)]
+        if urgs_aplicadas and "URG" in df_home.columns:
+            df_home = df_home[df_home["URG"].isin(urgs_aplicadas)]
+        if escolas_selecionadas and "Escola" in df_home.columns:
+            df_home = df_home[df_home["Escola"].isin(escolas_selecionadas)]
+        if "QtdAlunoEscola" in df_home.columns:
+            df_home["QtdAlunoEscola"] = pd.to_numeric(df_home["QtdAlunoEscola"], errors="coerce").fillna(0)
+            total_alunos = int(df_home["QtdAlunoEscola"].sum())
+
+    total_atend = df_filt["Quantidade"].sum() if not df_filt.empty else 0
+
+    render_metric_cards([
+        {"label": "TOTAL DE ATENDIMENTOS DE ENFERMAGEM", "value": total_atend},
+        {"label": "TOTAL GERAL DE ALUNOS", "value": total_alunos}
+    ])
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
-    regulacoes_sum = (
-        df_filt_no_reg.groupby("Regulacao")["Quantidade"].sum().sort_values(ascending=False)
-        if not df_filt_no_reg.empty and "Regulacao" in df_filt_no_reg.columns
-        else pd.Series(dtype="float")
-    )
-    regulacoes_sum = regulacoes_sum[regulacoes_sum > 0]
-
-    if not regulacoes_sum.empty:
-        kpi_metrics = [{"label": str(nome).upper(), "value": valor} for nome, valor in regulacoes_sum.items()]
-        for i in range(0, len(kpi_metrics), 5):
-            chunk = kpi_metrics[i : i + 5]
-            render_metric_cards(
-                chunk,
-                is_toggle=True,
-                active_labels=[l.upper() for l in regulacoes_selecionadas],
-                on_click_callback=toggle_regulacao,
-            )
-            if i + 5 < len(kpi_metrics):
-                st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-    else:
+    if df_filt.empty:
         st.info("Selecione ao menos um ano para visualizar os indicadores.")
+    
+    st.markdown("---")
 
-    render_section_divider()
-
-    # --- NOVO: Tabela Comparativa de Performance por ANO (Exames) ---
-    st.subheader("Tabela Comparativa de Performance por ANO (Exames)")
-    df_cmp_ano_perf = build_comparativo_anual(
-        df_filt,
-        "Regulacao",
-        value_col="Quantidade",
-        pct_label="Total",
-    )
-    if df_cmp_ano_perf is not None:
-        df_ano_perf_aggrid, ano_perf_column_defs, _ = prepare_comparativo_aggrid_data(
-            df_cmp_ano_perf, include_selection_column=False
-        )
-
-        # Mantém a mesma ordem dos indicadores gerais (cards), preservando TOTAL no final.
-        if not df_ano_perf_aggrid.empty and not regulacoes_sum.empty:
-            first_col = df_ano_perf_aggrid.columns[0]
-            ordem_indicadores = {
-                str(nome).strip().upper(): idx
-                for idx, nome in enumerate(regulacoes_sum.index.tolist())
-            }
-            df_ano_perf_aggrid["_ordem_kpi"] = df_ano_perf_aggrid[first_col].map(
-                lambda x: ordem_indicadores.get(str(x).strip().upper(), 10**6)
-            )
-            df_ano_perf_aggrid["_is_total"] = (
-                df_ano_perf_aggrid[first_col].astype(str).str.strip().str.upper().eq("TOTAL")
-            )
-            df_ano_perf_aggrid = (
-                df_ano_perf_aggrid
-                .sort_values(by=["_is_total", "_ordem_kpi"], ascending=[True, True], kind="stable")
-                .drop(columns=["_ordem_kpi", "_is_total"])
-                .reset_index(drop=True)
-            )
-
-        df_ano_perf_body, ano_perf_footer = split_aggrid_footer(df_ano_perf_aggrid)
-
-        def _ajustar_colunas_ano_exames(column_defs: list[dict]) -> None:
-            for col_def in column_defs:
-                header_name = str(col_def.get("headerName", "")).strip()
-
-                if header_name == "Regulacao":
-                    col_def["headerName"] = "Regulação"
-                    col_def["cellStyle"] = {"textAlign": "left"}
-                    col_def["headerClass"] = "saedas-aggrid-left-header"
-
-                if re.fullmatch(r"20\d{2}", header_name):
-                    col_def["headerClass"] = "saedas-aggrid-centered-header"
-
-                children = col_def.get("children")
-                if isinstance(children, list) and children:
-                    _ajustar_colunas_ano_exames(children)
-
-        _ajustar_colunas_ano_exames(ano_perf_column_defs)
-
-        ano_perf_grid_options = {
-            "columnDefs": ano_perf_column_defs,
-            "defaultColDef": {
-                "resizable": True,
-                "sortable": True,
-                "filter": False,
-                "suppressMenu": True,
-            },
-            "pinnedBottomRowData": ano_perf_footer,
-        }
-
-        df_ano_perf_export = (
-            pd.concat([df_ano_perf_body, pd.DataFrame(ano_perf_footer)], ignore_index=True)
-            if ano_perf_footer
-            else df_ano_perf_body.copy()
-        )
-        with st.container(key="exame_ano_actions_toolbar"):
-            render_table_toolbar(
-                df_ano_perf_export,
-                "comparativo_performance_ano_exames.csv",
-                "ano_perf_table_exame",
-            )
-
-        st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
-        render_saedas_aggrid(
-            df_ano_perf_body,
-            grid_options=ano_perf_grid_options,
-            key="ano_perf_table_exame_aggrid",
-            incluir_total=bool(ano_perf_footer),
-            min_height=140,
-            custom_css={
-                ".ag-header-cell.saedas-aggrid-left-header .ag-header-cell-label": {
-                    "justify-content": "flex-start !important",
-                    "text-align": "left !important",
-                },
-                ".ag-header-cell.saedas-aggrid-left-header .ag-header-cell-text": {
-                    "text-align": "left !important",
-                    "width": "auto !important",
-                },
-            },
-        )
-        st.markdown("</div>", unsafe_allow_html=True)
-        st.caption(
-            "Nota: As colunas '% Total' representam o percentual da Regulação no respectivo ano. "
-            "As colunas 'Var%' mostram a variação em relação ao ano anterior."
-        )
-    else:
-        st.info("Dados insuficientes para gerar a tabela comparativa de performance por ano.")
-
-    render_section_divider()
-
+    # ── Tabela Comparativa de Performance por URG ─────────────────────
     st.subheader("Performance por URG")
     st.caption("Nota: Clique em qualquer linha de URG para filtrar o restante do dashboard. Esta tabela é sensível apenas ao filtro de Ano.")
 
@@ -568,14 +550,14 @@ def page_exame():
             grid_options["initialState"] = {"rowSelection": pre_selected_rows}
 
         df_cmp_urg_export = pd.concat([df_cmp_urg_body, pd.DataFrame(footer_rows)], ignore_index=True) if footer_rows else df_cmp_urg_body.copy()
-        with st.container(key="exame_urg_actions_toolbar"):
-            render_table_toolbar(df_cmp_urg_export, "performance_urg_exame.csv", "urg_table_exame")
+        with st.container(key="enfermagem_urg_actions_toolbar"):
+            render_table_toolbar(df_cmp_urg_export, "performance_urg_enfermagem.csv", "urg_table_enfermagem")
 
         st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
         aggrid_response = render_saedas_aggrid(
             df_cmp_urg_body,
             grid_options=grid_options,
-            key=f"urg_table_exame_{hash(str(current_selected_urgs))}",
+            key=f"urg_table_enfermagem_{hash(str(current_selected_urgs))}",
             update_mode=GridUpdateMode.SELECTION_CHANGED,
             incluir_total=bool(footer_rows),
         )
@@ -588,25 +570,32 @@ def page_exame():
             elif isinstance(selected_rows, dict):
                 selected_rows = [selected_rows]
             new_selected_urgs = [row.get(urg_field) for row in selected_rows if row.get(urg_field) and row.get(urg_field) != "TOTAL"]
-            if set(new_selected_urgs) != set(current_selected_urgs):
+            
+            # Proteção contra reset indesejado durante o remount do componente (key change)
+            is_empty_on_remount = (not new_selected_urgs and current_selected_urgs and st.session_state.get("last_interaction_source") != "table")
+            
+            if not is_empty_on_remount and set(new_selected_urgs) != set(current_selected_urgs):
                 st.session_state["global_urgs"] = new_selected_urgs
                 st.session_state["pending_sidebar_urg_filter"] = new_selected_urgs
                 st.session_state["last_interaction_source"] = "table"
                 st.rerun()
     else:
-        st.info("Dados insuficientes para gerar a tabela de performance.")
+        st.info("Dados insuficientes para gerar a tabela de performance por URG.")
 
-    render_top_por_urg(
+    st.markdown("---")
+    # --- PRIORIDADE 3: DETALHAMENTO TOP POR URG (ESCOLAS E ATENDIMENTOS) ---
+    
+    df_cmp_escola = render_top_por_urg(
         df_filt_no_escola[df_filt_no_escola["Ano"].isin(selected_years_comp)] if not df_filt_no_escola.empty else pd.DataFrame(),
-        "Quantidade",
-        "Principais Escolas por URG",
-        "Escola",
-        table_key="escola_table_selection_exame",
+        "Quantidade", 
+        "Principais Escolas por URG", 
+        "Escola", 
+        table_key="escola_table_selection_enfermagem",
         active_row_value=st.session_state.get("sidebar_escola_filter", []),
-        selection_mode="multiple",
+        selection_mode="multiple"
     )
 
-    escolas_tabela_atual = st.session_state.get("escola_table_selection_exame__selected_values", [])
+    escolas_tabela_atual = st.session_state.get("escola_table_selection_enfermagem__selected_values", [])
     current_sidebar_escolas = st.session_state.get("sidebar_escola_filter", [])
     last_source = st.session_state.get("last_interaction_source", "")
     if last_source != "sidebar" and set(map(str, escolas_tabela_atual)) != set(map(str, current_sidebar_escolas)):
@@ -616,53 +605,117 @@ def page_exame():
     elif last_source == "sidebar":
         st.session_state["last_interaction_source"] = ""
 
-    render_section_divider()
 
-    st.subheader("Comparativo Anual de Exames por URG")
-    render_grouped_bar_anual(df_filt, "Quantidade", "", orientation="h")
-    render_section_divider()
+    st.markdown("---")
+    # ── Distribuição por URG ──────────────────────────────────────────────────
+    st.subheader("Distribuição por URG")
+    urg_ano_group = (
+        df_filt.groupby(["URG", "Ano"])["Quantidade"].sum().reset_index()
+        if not df_filt.empty and "URG" in df_filt.columns and "Ano" in df_filt.columns
+        else pd.DataFrame()
+    )
+    if urg_ano_group.empty:
+        st.info("Nenhum dado de URG para exibir.")
+    else:
+        # Ordena gráfico por numeral romano da URG e por Ano
+        urg_ano_group["_order"] = urg_ano_group["URG"].map(_urg_sort_key)
+        urg_ano_group_sorted = urg_ano_group.sort_values(["_order", "Ano"]).drop(columns="_order")
+        
+        # Converte o Ano para string categórica
+        urg_ano_group_sorted["Ano"] = urg_ano_group_sorted["Ano"].astype(str)
+        
+        # Formata os valores absolutos para as labels e hover (ex: "3.235")
+        urg_ano_group_sorted["_text_fmt"] = urg_ano_group_sorted["Quantidade"].apply(
+            lambda x: f"{int(x):,}".replace(",", ".") if pd.notna(x) else ""
+        )
+        
+        fig_urg = px.bar(
+            urg_ano_group_sorted,
+            x="URG",
+            y="Quantidade",
+            color="Ano",
+            barmode="group",
+            text="_text_fmt",
+            category_orders={"URG": urg_ano_group_sorted["URG"].unique().tolist()}
+        )
+        
+        fig_urg.update_traces(
+            textposition="auto",
+            hovertemplate="<b>URG:</b> %{x}<br><b>Quantidade:</b> %{text}<extra></extra>"
+        )
+        fig_urg.update_layout(
+            showlegend=True,
+            legend_title_text="Ano",
+            xaxis_title="URG",
+            yaxis_title="Total de Atendimentos",
+            hovermode="x unified"
+        )
+        st.plotly_chart(fig_urg, use_container_width=True)
 
-    st.subheader("Distribuição por Regulação")
-    render_grouped_bar_anual(df_filt, "Quantidade", "", x_col="Regulacao", orientation="h")
 
-    render_section_divider()
+
+
+    st.markdown("---")
     st.subheader("Detalhamento por Aluno")
     if df_aluno.empty:
-        st.info("Dados de alunos não estão disponíveis ou houve erro na leitura do CSV.")
+        st.info(
+            "Dados de alunos não estão disponíveis ou houve erro na leitura do CSV."
+        )
     else:
         df_aluno_base = filter_by_sidebar_selections(df_aluno, selections)
-        df_aluno_base = df_aluno_base[df_aluno_base["Ano"].isin(selected_years_comp)] if not df_aluno_base.empty else pd.DataFrame()
+        df_aluno_filtrado = df_aluno_base[df_aluno_base["Ano"].isin(selected_years_comp)] if not df_aluno_base.empty else pd.DataFrame()
 
-        selected_escolas_effective = selections.get("escola", [])
-        if selected_escolas_effective:
-            df_aluno_filtrado = df_aluno_base[df_aluno_base["Escola"].isin(selected_escolas_effective)]
-        else:
-            df_aluno_filtrado = df_aluno_base.copy()
+        aluno_col = "Aluno"
+        serie_col = "Serie"
+        turma_col = "Turma"
 
-        if regulacoes_selecionadas and "Regulacao" in df_aluno_filtrado.columns:
-            df_aluno_filtrado = df_aluno_filtrado[df_aluno_filtrado["Regulacao"].isin(regulacoes_selecionadas)]
-
-        aluno_col, serie_col, turma_col = "Aluno", "Serie", "Turma"
         if aluno_col in df_aluno_filtrado.columns:
-            alunos_disponiveis = sorted(list(df_aluno_filtrado[aluno_col].dropna().astype(str).unique()))
-            alunos_selecionados = st.multiselect("Filtrar por Aluno", options=alunos_disponiveis, default=[], placeholder="Todos")
+            alunos_disponiveis = sorted(
+                list(df_aluno_filtrado[aluno_col].dropna().astype(str).unique())
+            )
+            alunos_selecionados = st.multiselect(
+                "Filtrar por Aluno",
+                options=alunos_disponiveis,
+                placeholder="Todos",
+                key="enfermagem_aluno_multiselect",
+            )
             if alunos_selecionados:
-                df_aluno_filtrado = df_aluno_filtrado[df_aluno_filtrado[aluno_col].astype(str).isin(alunos_selecionados)]
+                df_aluno_filtrado = df_aluno_filtrado[
+                    df_aluno_filtrado[aluno_col].astype(str).isin(alunos_selecionados)
+                ]
 
         if serie_col in df_aluno_filtrado.columns:
-            series_disponiveis = sorted(list(df_aluno_filtrado[serie_col].dropna().astype(str).unique()))
-            series_selecionadas = st.multiselect("Filtrar por Série", options=series_disponiveis, default=[], placeholder="Todas")
+            series_disponiveis = sorted(
+                list(df_aluno_filtrado[serie_col].dropna().astype(str).unique())
+            )
+            series_selecionadas = st.multiselect(
+                "Filtrar por Série",
+                options=series_disponiveis,
+                placeholder="Todas",
+                key="enfermagem_serie_multiselect",
+            )
             if series_selecionadas:
-                df_aluno_filtrado = df_aluno_filtrado[df_aluno_filtrado[serie_col].astype(str).isin(series_selecionadas)]
+                df_aluno_filtrado = df_aluno_filtrado[
+                    df_aluno_filtrado[serie_col].astype(str).isin(series_selecionadas)
+                ]
 
         if turma_col in df_aluno_filtrado.columns:
-            turmas_disponiveis = sorted(list(df_aluno_filtrado[turma_col].dropna().astype(str).unique()))
-            turmas_selecionadas = st.multiselect("Filtrar por Turma", options=turmas_disponiveis, default=[], placeholder="Todas")
+            turmas_disponiveis = sorted(
+                list(df_aluno_filtrado[turma_col].dropna().astype(str).unique())
+            )
+            turmas_selecionadas = st.multiselect(
+                "Filtrar por Turma",
+                options=turmas_disponiveis,
+                placeholder="Todas",
+                key="enfermagem_turma_multiselect",
+            )
             if turmas_selecionadas:
-                df_aluno_filtrado = df_aluno_filtrado[df_aluno_filtrado[turma_col].astype(str).isin(turmas_selecionadas)]
+                df_aluno_filtrado = df_aluno_filtrado[
+                    df_aluno_filtrado[turma_col].astype(str).isin(turmas_selecionadas)
+                ]
 
         total_registros_aluno = len(df_aluno_filtrado)
-        st.caption(f"{total_registros_aluno} registros após filtros da sidebar" + (" e de regulação" if regulacoes_selecionadas else ""))
+        st.caption(f"{total_registros_aluno} registros após filtros da sidebar")
 
         if df_aluno_filtrado.empty:
             st.warning("Nenhum registro de aluno para os filtros selecionados.")
@@ -683,37 +736,53 @@ def page_exame():
                 return f"?{urlencode(params)}"
 
             df_aluno_para_exibir = df_aluno_filtrado.copy()
-            static_cols = [c for c in ["Sexo", "URG", "Escola", "Serie", "Turma"] if c in df_aluno_para_exibir.columns]
-            df_static = df_aluno_para_exibir.groupby(["Aluno", "DataNascimento"], as_index=False)[static_cols].last()
+            
+            if not df_aluno_para_exibir.empty:
+                # 1. Obter os atributos estáticos mais recentes do aluno
+                static_cols = ["DataNascimento", "Sexo", "Profissional", "URG", "Escola", "Serie", "Turma"]
+                static_cols = [c for c in static_cols if c in df_aluno_para_exibir.columns]
+                
+                df_static = df_aluno_para_exibir.groupby(["ID", "Aluno"], as_index=False)[static_cols].last()
+                
+                # 2. Contar consultas por aluno e por Ano
+                df_counts = df_aluno_para_exibir.groupby(["ID", "Ano"]).size().reset_index(name="Qtd")
+                
+                # 3. Pivotar os anos para colunas
+                df_pivot_ano = df_counts.pivot(index="ID", columns="Ano", values="Qtd").fillna(0)
+                anos_cols = list(df_pivot_ano.columns)
+                
+                # 4. Mesclar dados estáticos com as colunas de ano
+                df_aluno_final = df_static.merge(df_pivot_ano, on="ID", how="left")
+                
+                # 5. Calcular o Total de consultas do aluno
+                df_aluno_final["Total"] = df_aluno_final[anos_cols].sum(axis=1)
+                
+                # 6. Limpar zeros (UI Limpa) e formatar como inteiro
+                for c in anos_cols + ["Total"]:
+                    df_aluno_final[c] = df_aluno_final[c].apply(lambda x: f"{int(x)}" if pd.notna(x) and x > 0 else "")
+                
+                # Link do Menu
+                df_aluno_final["Menu"] = df_aluno_final.apply(build_perfil_link, axis=1)
+                
+                # Formatar Data de Nascimento
+                if "DataNascimento" in df_aluno_final.columns:
+                    df_aluno_final["DataNascimento"] = pd.to_datetime(
+                        df_aluno_final["DataNascimento"], errors="coerce"
+                    ).dt.strftime("%d/%m/%Y")
+                    
+                # Reordenar colunas
+                col_order = ["ID", "Aluno", "DataNascimento", "Sexo", "Profissional", "URG", "Escola", "Serie", "Turma"]
+                col_order = [c for c in col_order if c in df_aluno_final.columns] + anos_cols + ["Total", "Menu"]
+                df_aluno_final = df_aluno_final[col_order]
+                
+                # Substituir NaN nos campos de texto por string vazia
+                df_aluno_final = df_aluno_final.fillna("")
+                
+                # Renomear coluna Menu para Perfil para exibição
+                df_aluno_final = df_aluno_final.rename(columns={"Menu": "Perfil"})
+                preview_limit = 500
+                df_aluno_head = df_aluno_final.head(preview_limit).reset_index(drop=True)
 
-            def format_reg_list(group):
-                regs = sorted(group["Regulacao"].dropna().unique())
-                return ", ".join([r.lower().capitalize() for r in regs])
-
-            df_desc = df_aluno_para_exibir.groupby(["Aluno", "DataNascimento", "Ano"]).apply(format_reg_list).reset_index(name="Descricao")
-            df_pivot_ano = df_desc.pivot(index=["Aluno", "DataNascimento"], columns="Ano", values="Descricao").fillna("").reset_index()
-            anos_cols = [c for c in df_pivot_ano.columns if c not in ["Aluno", "DataNascimento"]]
-
-            df_aluno_final = df_static.merge(df_pivot_ano, on=["Aluno", "DataNascimento"], how="left")
-            df_counts_total = df_aluno_para_exibir.groupby(["Aluno", "DataNascimento"]).size().reset_index(name="Total")
-            df_aluno_final = df_aluno_final.merge(df_counts_total, on=["Aluno", "DataNascimento"], how="left")
-            for c in anos_cols:
-                df_aluno_final[c] = df_aluno_final[c].fillna("")
-            if "Total" in df_aluno_final.columns:
-                df_aluno_final["Total"] = df_aluno_final["Total"].apply(lambda x: f"{int(x)}" if pd.notna(x) and x > 0 else "")
-            df_aluno_final["Menu"] = df_aluno_final.apply(build_perfil_link, axis=1)
-            if "DataNascimento" in df_aluno_final.columns:
-                df_aluno_final["DataNascimento"] = pd.to_datetime(df_aluno_final["DataNascimento"], errors="coerce").dt.strftime("%d/%m/%Y")
-
-            col_order = [c for c in ["Aluno", "DataNascimento", "Sexo", "URG", "Escola", "Serie", "Turma"] if c in df_aluno_final.columns] + anos_cols + ["Total", "Menu"]
-            df_aluno_final = df_aluno_final[col_order].fillna("")
-
-            # Renomear coluna Menu para Perfil para exibição
-            df_aluno_final = df_aluno_final.rename(columns={"Menu": "Perfil"})
-            preview_limit = 500
-            df_aluno_head = df_aluno_final.head(preview_limit).reset_index(drop=True)
-
-            if not df_aluno_head.empty:
                 # Aplicar design padrão (Zebra, Hover, etc)
                 styled_aluno = (
                     df_aluno_head.style.pipe(apply_saedas_design, categoria_col="Aluno")
@@ -721,8 +790,8 @@ def page_exame():
                     .hide(axis="index")
                 )
 
-                with st.container(key="exame_aluno_actions_toolbar"):
-                    render_table_toolbar(df_aluno_head, "detalhes_alunos_exame.csv", "aluno_table_exame")
+                with st.container(key="enfermagem_aluno_actions_toolbar"):
+                    render_table_toolbar(df_aluno_head, "detalhes_alunos_enfermagem.csv", "aluno_table_enfermagem")
 
                 st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
                 st.dataframe(
@@ -738,9 +807,11 @@ def page_exame():
                 st.markdown("</div>", unsafe_allow_html=True)
             else:
                 st.info("Nenhum registro detalhado para exibir.")
-
             if total_registros_aluno > preview_limit:
-                st.info(f"Exibindo apenas as primeiras {preview_limit} linhas de {total_registros_aluno}.")
+                st.info(
+                    f"Exibindo apenas as primeiras {preview_limit} linhas de {total_registros_aluno}."
+                )
 
     st.markdown(" ")
     footer_personal()
+

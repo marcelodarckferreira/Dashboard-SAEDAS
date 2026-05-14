@@ -256,3 +256,163 @@ SCHEMA_MEDICO_ANO = {
     "2026",
     "Total",
 }
+
+# Enfermagem (atendimentos)
+SCHEMA_ENFERMAGEM = {
+    "Ano",
+    "IdUrg",
+    "URG",
+    "Escola",
+    "Tipo",
+    "Descricao",
+    "Qtd",
+}
+
+# Enfermagem por aluno
+SCHEMA_ENFERMAGEM_ALUNO = {
+    "Ano",
+    "ID",
+    "Aluno",
+    "DtNasc",
+    "Sexo",
+    "Profissional",
+    "IdUrg",
+    "URG",
+    "Escola",
+    "Tipo",
+    "Serie",
+    "Turma",
+}
+
+# Enfermagem por ano (agregado)
+SCHEMA_ENFERMAGEM_ANO = {
+    "URG",
+    "Escola",
+    "Atendimento",
+    "2022",
+    "2023",
+    "2024",
+    "2025",
+    "2026",
+    "Total",
+}
+
+# Professor (atendimentos)
+SCHEMA_PROFESSOR = {
+    "Ano",
+    "IdUrg",
+    "URG",
+    "Escola",
+    "Tipo",
+    "Descricao",
+    "Qtd",
+}
+
+# Professor por aluno
+SCHEMA_PROFESSOR_ALUNO = {
+    "Ano",
+    "ID",
+    "Aluno",
+    "DtNasc",
+    "Sexo",
+    "Profissional",
+    "IdUrg",
+    "URG",
+    "Escola",
+    "Tipo",
+    "Serie",
+    "Turma",
+}
+
+# Professor por ano (agregado)
+SCHEMA_PROFESSOR_ANO = {
+    "URG",
+    "Escola",
+    "Atendimento",
+    "2022",
+    "2023",
+    "2024",
+    "2025",
+    "2026",
+    "Total",
+}
+
+# Assistência Social (atendimentos)
+SCHEMA_ASSISTENCIA_SOCIAL = {
+    "Ano",
+    "IdUrg",
+    "URG",
+    "Escola",
+    "Tipo",
+    "Descricao",
+    "Qtd",
+}
+
+# Assistência Social por aluno
+SCHEMA_ASSISTENCIA_SOCIAL_ALUNO = {
+    "Ano",
+    "ID",
+    "Aluno",
+    "DtNasc",
+    "Sexo",
+    "Profissional",
+    "IdUrg",
+    "URG",
+    "Escola",
+    "Tipo",
+    "Serie",
+    "Turma",
+}
+
+# Assistência Social por ano (agregado)
+SCHEMA_ASSISTENCIA_SOCIAL_ANO = {
+    "URG",
+    "Escola",
+    "Atendimento",
+    "2022",
+    "2023",
+    "2024",
+    "2025",
+    "2026",
+    "Total",
+}
+
+# Psicólogo (atendimentos)
+SCHEMA_PSICOLOGO = {
+    "Ano",
+    "IdUrg",
+    "URG",
+    "Escola",
+    "Tipo",
+    "Descricao",
+    "Qtd",
+}
+
+# Psicólogo por aluno
+SCHEMA_PSICOLOGO_ALUNO = {
+    "Ano",
+    "ID",
+    "Aluno",
+    "DtNasc",
+    "Sexo",
+    "Profissional",
+    "IdUrg",
+    "URG",
+    "Escola",
+    "Tipo",
+    "Serie",
+    "Turma",
+}
+
+# Psicólogo por ano (agregado)
+SCHEMA_PSICOLOGO_ANO = {
+    "URG",
+    "Escola",
+    "Atendimento",
+    "2022",
+    "2023",
+    "2024",
+    "2025",
+    "2026",
+    "Total",
+}

@@ -56,7 +56,9 @@ ARQUIVO_CSV09="/media/db/saedas/app/data/DashboardProfessor.csv"
 ARQUIVO_CSV091="/media/db/saedas/app/data/DashboardProfessorAno.csv"
 ARQUIVO_CSV092="/media/db/saedas/app/data/DashboardProfessorAluno.csv"
 
-ARQUIVO_CSV10="/media/db/saedas/app/data/DashboardProfissional.csv"
+ARQUIVO_CSV10="/media/db/saedas/app/data/DashboardPsicologo.csv"
+ARQUIVO_CSV101="/media/db/saedas/app/data/DashboardPsicologoAno.csv"
+ARQUIVO_CSV102="/media/db/saedas/app/data/DashboardPsicologoAluno.csv"
 
 # ======================
 # Stored Procedures
@@ -98,7 +100,9 @@ QUERY09="EXEC usp_Exportar_DashboardProfessor"
 QUERY091="EXEC usp_Exportar_DashboardProfessorAno"
 QUERY092="EXEC usp_Exportar_DashboardProfessorAluno"
 
-QUERY10="EXEC usp_Exportar_DashboardProfissional"
+QUERY10="EXEC usp_Exportar_DashboardPsicologo"
+QUERY101="EXEC usp_Exportar_DashboardPsicologoAno"
+QUERY102="EXEC usp_Exportar_DashboardPsicologoAluno"
 
 # ======================
 # Cabeçalhos CSV corretos
@@ -141,6 +145,8 @@ CABECALHO091="URG;Escola;Atendimento;2022;2023;2024;2025;2026;Total"
 CABECALHO092="Ano;ID;Aluno;DtNasc;Sexo;Profissional;IdUrg;URG;Escola;Tipo;Serie;Turma"
 
 CABECALHO10="Ano;IdUrg;URG;Escola;Tipo;Descricao;Qtd"
+CABECALHO101="URG;Escola;Atendimento;2022;2023;2024;2025;2026;Total"
+CABECALHO102="Ano;ID;Aluno;DtNasc;Sexo;Profissional;IdUrg;URG;Escola;Tipo;Serie;Turma"
 
 # ======================
 # Log
@@ -218,7 +224,9 @@ exportar_csv "$QUERY09" "$ARQUIVO_CSV09" "$CABECALHO09" "DashboardProfessor"
 exportar_csv "$QUERY091" "$ARQUIVO_CSV091" "$CABECALHO091" "DashboardProfessorAno"
 exportar_csv "$QUERY092" "$ARQUIVO_CSV092" "$CABECALHO092" "DashboardProfessorAluno"
 
-exportar_csv "$QUERY10" "$ARQUIVO_CSV10" "$CABECALHO10" "DashboardProfissional"
+exportar_csv "$QUERY10" "$ARQUIVO_CSV10" "$CABECALHO10" "DashboardPsicologo"
+exportar_csv "$QUERY101" "$ARQUIVO_CSV101" "$CABECALHO101" "DashboardPsicologoAno"
+exportar_csv "$QUERY102" "$ARQUIVO_CSV102" "$CABECALHO102" "DashboardPsicologoAluno"
 
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✅ Final da execução do script" >> "$LOGFILE"
 echo "" >> "$LOGFILE"

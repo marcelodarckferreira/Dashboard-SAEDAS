@@ -264,6 +264,22 @@ Elemento clicável que funciona como atalho de navegação ou filtro (Toggle).
     - Transição: `0.25s cubic-bezier(0.4, 0, 0.2, 1)`.
 - **Estado Ativo (Toggle):** Borda dupla (glow + gap) e fundo `--header-bg`.
 
+### 7.3 Grid dos Indicadores (Regra Obrigatória)
+
+- Todos os indicadores gerais (cards estáticos e cards toggle) devem usar **grid fixo de 5 colunas por linha**.
+- A última linha deve manter a mesma largura de card das linhas anteriores (sem card esticado em largura total).
+- Quando houver mais de 5 indicadores, a renderização deve quebrar automaticamente em novas linhas de 5.
+- Implementação padrão centralizada em `app/utils/styles.py` na função `render_metric_cards(...)`.
+
+### 7.4 Ordem em Tabelas Comparativas por ANO (Regra Obrigatória)
+
+- Nas telas com indicadores gerais por categoria (ex.: Encaminhamento, Regulação), a **Tabela Comparativa de Performance por ANO** deve seguir a **mesma ordem visual dos indicadores gerais**.
+- A regra vale para a renderização da grade (AgGrid) e para exportação CSV da mesma tabela.
+- A linha `TOTAL` deve permanecer como última linha, independentemente da ordenação das categorias.
+- Implementação atual aplicada em:
+  - `app/app_pages/consulta.py` (Encaminhamentos)
+  - `app/app_pages/exame.py` (Regulações)
+
 ---
 
 ## 8. Rodapé de Página (footer_personal)

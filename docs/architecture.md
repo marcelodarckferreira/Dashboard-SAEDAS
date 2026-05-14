@@ -69,7 +69,7 @@ app/
 - **`SAEDAS_PALETTE`** — dicionário com valores hex para light/dark. Fonte de verdade Python para cores de dataframe (linha ativa). Deve estar em sincronia com `styles.css`.
 - **`apply_global_css()`** — injeta `styles.css` via `st.markdown`. Chamada no início de cada `page_*()`.
 - **`apply_saedas_design(styler, categoria_col, active_items)`** — estiliza qualquer Pandas Styler com header, footer (Pro Footer) e linha ativa. Retorna um Styler pronto para `st.dataframe`.
-- **`render_metric_cards(metrics, is_toggle, active_labels)`** — renderiza KPI cards estáticos ou interativos (toggle).
+- **`render_metric_cards(metrics, is_toggle, active_labels, on_click_callback, fixed_columns)`** — renderiza KPI cards estáticos ou interativos (toggle) no padrão global de grid com 5 colunas por linha (com quebra automática em novas linhas quando necessário).
 
 ### `utils/page_helpers.py`
 
@@ -78,6 +78,12 @@ app/
 - **`render_grouped_bar_anual(df, value_col, titulo)`** — gráfico de barras agrupadas por ano.
 - **`render_top_por_urg(df, value_col, titulo, label_col)`** — gráfico horizontal para uma única URG selecionada.
 - **`format_filters_applied(selections, df, mapping)`** — string compacta de filtros para breadcrumb.
+
+### Regras de Ordenação de KPI x Tabela ANO
+
+- Em páginas com cards de indicadores por categoria (Consulta e Exame), a tabela **Comparativa de Performance por ANO** deve usar a mesma ordem dos cards (indicadores gerais).
+- A linha `TOTAL` permanece fixada ao final.
+- A ordenação é aplicada no DataFrame da grade antes de `split_aggrid_footer(...)`, garantindo consistência visual e na exportação.
 
 ### `utils/state_manager.py`
 
@@ -187,3 +193,18 @@ Os parâmetros são consumidos e removidos da URL após o processamento para evi
 | `plotly.express` | Gráficos de barras e análises |
 | `pandas` | Manipulação de dados e Styler |
 | `Pillow` | Carregamento do logo na sidebar |
+---
++
++## 7. Governança de Infraestrutura e Dependências
++
++### Padrão de Execução
++
++- **Docker First:** O ambiente Docker é a referência oficial para comportamento do sistema. Conflitos de bibliotecas de sistema (shared objects, fontes, charset) devem ser resolvidos no `Dockerfile`.
++- **Isolamento:** O uso de `pip install` local sem venv é estritamente proibido para evitar poluição do ambiente e conflitos globais.
++
++### Gestão de Conflitos de Bibliotecas
++
++- **Streamlit vs Componentes:** Bibliotecas de terceiros (como `streamlit-aggrid` ou `streamlit-option-menu`) devem ser validadas quanto à compatibilidade com a versão do core do Streamlit antes da atualização do `requirements.txt`.
++- **Frontend-Backend Parity:** Funcionalidades que dependem de hardware ou SO (como áudio, câmera ou clipboard) devem sempre priorizar APIs de navegador (JS) para garantir que funcionem de forma idêntica dentro de containers Docker headless.
++- **Verificação de Regressão:** Qualquer mudança no `requirements.txt` exige um rebuild completo da imagem Docker (`docker compose build --no-cache`) para validar que não há conflitos de dependências transitivas.
++

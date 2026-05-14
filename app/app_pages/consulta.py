@@ -18,7 +18,6 @@ from app.utils.page_helpers import (
     render_grouped_bar_anual,
     toggle_multiselect_value,
     render_section_divider,
-    calcular_altura_aggrid,
     prepare_comparativo_aggrid_data,
     split_aggrid_footer,
     render_table_toolbar,
@@ -29,6 +28,7 @@ from app.utils.schemas import (
     SCHEMA_CONSULTA,
     SCHEMA_CONSULTA_ALUNO,
     SCHEMA_CONSULTA_ANO,
+    SCHEMA_HOME,
 )
 from app.utils.styles import apply_global_css, render_metric_cards, build_row_style_fn, get_table_hover_styles, apply_saedas_design
 
@@ -45,10 +45,14 @@ def carregar_dados_consulta():
     csv_file_ano = "data/DashboardConsultaAno.csv"
     df_ano, info_ano = load_csv(csv_file_ano, expected_cols=SCHEMA_CONSULTA_ANO)
 
+    csv_file_home = "data/DashboardHome.csv"
+    df_home, info_home = load_csv(csv_file_home, expected_cols=SCHEMA_HOME)
+
     return {
         "principal": {"df": df, "info": info, "csv": csv_file},
         "aluno": {"df": df_aluno_raw, "info": info_aluno, "csv": csv_file_aluno},
         "ano": {"df": df_ano, "info": info_ano, "csv": csv_file_ano},
+        "home": {"df": df_home, "info": info_home, "csv": csv_file_home},
     }
 
 
@@ -66,9 +70,265 @@ def page_consulta():
     st.markdown(
         "Resumo consolidado das ações realizadas por ano, URG e equipe técnica."
     )
+    st.markdown(
+        """
+        <style>
+            /* Container Principal - Ajuste de Espaçamento Vertical */
+            .st-key-massive_year_selector {
+                margin-top: -1.5rem !important; /* Puxa o componente para cima */
+                margin-bottom: 1rem !important;
+            }
+                     
+            /* Alvo em QUALQUER botão dentro do container do seletor */
+            .st-key-massive_year_selector button {
+                height: 56px !important;      /* Reduzido para um tamanho mais equilibrado */
+                min-width: 120px !important;
+                border-radius: 0 !important;  /* Remove arredondamento individual */
+                background-color: #1e293b !important;
+                border: 1px solid #334155 !important;
+                border-right: none !important; /* Remove bordas internas duplicadas */
+                transition: all 0.3s ease !important;
+                margin: 0 !important;
+            }
+            
+            /* Arredondamento apenas nas extremidades do GRUPO */
+            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:first-of-type button,
+            .st-key-massive_year_selector button:first-of-type {
+                border-radius: 10px 0 0 10px !important;
+            }
+            
+            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:last-of-type button,
+            .st-key-massive_year_selector button:last-of-type {
+                border-radius: 0 10px 10px 0 !important;
+                border-right: 1px solid #334155 !important;
+            }
+            
+            /* Alvo em QUALQUER parágrafo ou texto dentro dos botões */
+            .st-key-massive_year_selector button p,
+            .st-key-massive_year_selector button span {
+                font-size: 1.85rem !important; /* Tamanho proporcional e legível */
+                font-weight: 700 !important;
+                color: #f8fafc !important;
+                line-height: 1 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            
+            /* Estado Ativo (Sincronizado com o tema do Streamlit) */
+            .st-key-massive_year_selector button[data-testid*="Active"],
+            .st-key-massive_year_selector button[aria-pressed="true"] {
+                background-color: #3b82f6 !important;
+                border-color: #60a5fa !important;
+                box-shadow: none !important; /* Remove o glow para um visual mais limpo */
+            }
+            
+            .st-key-massive_year_selector button[data-testid*="Active"] p,
+            .st-key-massive_year_selector button[aria-pressed="true"] p {
+                color: #ffffff !important;
+            }
+
+            /* Rótulos e valores dos cards */
+            .home-metric-label {
+                font-size: 0.78rem !important;
+                font-weight: 700 !important;
+                color: #94a3b8 !important;
+                text-transform: uppercase !important;
+                letter-spacing: 0.05em !important;
+                margin-bottom: 4px !important;
+            }
+            .home-metric-value {
+                font-size: 1.85rem !important;
+                font-weight: 800 !important;
+                color: #f1f5f9 !important;
+                line-height: 1.1 !important;
+            }
+            .home-metric-card {
+                border-radius: 12px !important;
+                padding: 20px !important;
+                height: 100% !important;
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: center !important;
+                border: 1.5px solid transparent !important;
+                background-origin: border-box !important;
+                background-clip: padding-box, border-box !important;
+                transition: all 0.25s ease !important;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+            }
+            .metric-card-static {
+                background-image: linear-gradient(#0f172a, #0f172a), linear-gradient(135deg, #94a3b8 0%, #334155 100%) !important;
+            }
+            .home-metric-link {
+                background-image: linear-gradient(#0f172a, #0f172a), linear-gradient(135deg, #38bdf8 0%, #1e40af 100%) !important;
+                cursor: pointer !important;
+            }
+            .home-metric-link:hover {
+                transform: translateY(-3px) !important;
+                background-image: linear-gradient(#0f172a, #0f172a), linear-gradient(135deg, #7dd3fc 0%, #3b82f6 100%) !important;
+                box-shadow: 0 0 20px rgba(56, 189, 248, 0.3), 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+            }
+            /* KPIs toggle com o mesmo look-and-feel dos cards da Home */
+            div[class*="st-key-btn_kpi_"] button {
+                min-height: 96px !important;
+                border-radius: 12px !important;
+                padding: 12px 14px !important;
+                border: 1.5px solid #334155 !important;
+                background: #0f172a !important;
+                color: #f1f5f9 !important;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+                transition: all 0.25s ease !important;
+                white-space: pre-line !important;
+                text-align: left !important;
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: stretch !important;
+                justify-content: flex-start !important;
+                text-align: left !important;
+                line-height: 1.2 !important;
+                font-size: 0.78rem !important;
+                font-weight: 700 !important;
+                letter-spacing: 0.05em !important;
+                text-transform: uppercase !important;
+            }
+            div[class*="st-key-btn_kpi_"] [data-testid^="stBaseButton-"] {
+                justify-content: flex-start !important;
+                text-align: left !important;
+            }
+            div[class*="st-key-btn_kpi_"] button > div {
+                width: 100% !important;
+                text-align: left !important;
+            }
+            div[class*="st-key-btn_kpi_"] button p {
+                margin: 0 !important;
+                white-space: pre-line !important;
+                color: #94a3b8 !important;
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: flex-start !important;
+                align-items: flex-start !important;
+                min-height: 100% !important;
+                text-align: left !important;
+                width: 100% !important;
+            }
+            div[class*="st-key-btn_kpi_"] button div[data-testid="stMarkdownContainer"] {
+                display: flex !important;
+                align-items: flex-start !important;
+                justify-content: flex-start !important;
+                height: 100% !important;
+                width: 100% !important;
+                text-align: left !important;
+            }
+            div[class*="st-key-btn_kpi_"] button div[data-testid="stMarkdownContainer"] * {
+                text-align: left !important;
+                margin-left: 0 !important;
+                margin-right: auto !important;
+            }
+            div[class*="st-key-btn_kpi_"] button p strong {
+                display: block !important;
+                margin-top: 6px !important;
+                color: #f1f5f9 !important;
+                font-size: 2rem !important;
+                line-height: 1.05 !important;
+                letter-spacing: 0 !important;
+                text-transform: none !important;
+            }
+            div[class*="st-key-btn_kpi_"] button:hover {
+                transform: translateY(-3px) !important;
+                border-color: #38bdf8 !important;
+                box-shadow: 0 0 20px rgba(56, 189, 248, 0.3), 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+            }
+            div[class*="st-key-btn_kpi_"] button[kind="primary"] {
+                border-color: #38bdf8 !important;
+                background: linear-gradient(135deg, rgba(56, 189, 248, 0.18) 0%, rgba(30, 64, 175, 0.22) 100%) !important;
+            }
+
+            /* Toolbar AgGrid agrupada (Copiar + CSV) */
+            .st-key-consulta_urg_actions_toolbar div[data-testid="stHorizontalBlock"],
+            .st-key-consulta_ano_actions_toolbar div[data-testid="stHorizontalBlock"],
+            .st-key-consulta_reg_actions_toolbar div[data-testid="stHorizontalBlock"],
+            .st-key-consulta_aluno_actions_toolbar div[data-testid="stHorizontalBlock"],
+            .st-key-escola_table_selection_consulta_actions_toolbar div[data-testid="stHorizontalBlock"],
+            .st-key-encaminhamento_simple_actions_toolbar div[data-testid="stHorizontalBlock"] {
+                gap: 0 !important;
+                --st-horizontal-block-gap: 0px !important;
+                justify-content: flex-end !important;
+                align-items: center !important;
+                padding-right: 6px !important;
+                overflow: visible !important;
+            }
+            .st-key-consulta_urg_actions_toolbar div[data-testid="stColumn"],
+            .st-key-consulta_ano_actions_toolbar div[data-testid="stColumn"],
+            .st-key-consulta_reg_actions_toolbar div[data-testid="stColumn"],
+            .st-key-consulta_aluno_actions_toolbar div[data-testid="stColumn"],
+            .st-key-escola_table_selection_consulta_actions_toolbar div[data-testid="stColumn"],
+            .st-key-encaminhamento_simple_actions_toolbar div[data-testid="stColumn"] {
+                padding: 0 !important;
+                margin: 0 !important;
+                width: auto !important;
+                flex: 0 1 auto !important;
+                overflow: visible !important;
+            }
+            .st-key-consulta_urg_actions_toolbar button,
+            .st-key-consulta_ano_actions_toolbar button,
+            .st-key-consulta_reg_actions_toolbar button,
+            .st-key-consulta_aluno_actions_toolbar button,
+            .st-key-consulta_aluno_actions_toolbar div[data-testid="stDownloadButton"] button,
+            .st-key-escola_table_selection_consulta_actions_toolbar button,
+            .st-key-encaminhamento_simple_actions_toolbar button {
+                background: transparent !important;
+                border: 1px solid #334155 !important;
+                border-right: none !important;
+                box-sizing: border-box !important;
+                border-radius: 0 !important;
+                color: #94a3b8 !important;
+                height: 34px !important;
+                padding: 0 12px !important;
+                font-size: 0.78rem !important;
+                transition: background 0.15s, color 0.15s !important;
+                margin: 0 !important;
+                white-space: nowrap !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                gap: 6px !important;
+            }
+            .st-key-consulta_urg_actions_toolbar div[class*="st-key-copy_"] button,
+            .st-key-consulta_ano_actions_toolbar div[class*="st-key-copy_"] button,
+            .st-key-consulta_reg_actions_toolbar div[class*="st-key-copy_"] button,
+            .st-key-consulta_aluno_actions_toolbar div[class*="st-key-copy_"] button,
+            .st-key-escola_table_selection_consulta_actions_toolbar div[class*="st-key-copy_"] button,
+            .st-key-encaminhamento_simple_actions_toolbar div[class*="st-key-copy_"] button {
+                border-radius: 6px 0 0 6px !important;
+            }
+            .st-key-consulta_urg_actions_toolbar div[class*="st-key-download_"] button,
+            .st-key-consulta_ano_actions_toolbar div[class*="st-key-download_"] button,
+            .st-key-consulta_reg_actions_toolbar div[class*="st-key-download_"] button,
+            .st-key-consulta_aluno_actions_toolbar div[class*="st-key-download_"] button,
+            .st-key-escola_table_selection_consulta_actions_toolbar div[class*="st-key-download_"] button,
+            .st-key-encaminhamento_simple_actions_toolbar div[class*="st-key-download_"] button {
+                border-right: 1px solid #334155 !important;
+                border-radius: 0 6px 6px 0 !important;
+            }
+            .st-key-consulta_urg_actions_toolbar button:hover,
+            .st-key-consulta_ano_actions_toolbar button:hover,
+            .st-key-consulta_reg_actions_toolbar button:hover,
+            .st-key-consulta_aluno_actions_toolbar button:hover,
+            .st-key-escola_table_selection_consulta_actions_toolbar button:hover,
+            .st-key-encaminhamento_simple_actions_toolbar button:hover {
+                border-color: #38bdf8 !important;
+                color: #38bdf8 !important;
+                z-index: 2 !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     filters_placeholder = st.empty()
 
-    # apply_global_css() — Já injetado no app.py
+    render_section_divider()
+    st.markdown(" ")
+
+    # apply_global_css() — Já injetado no main.py
     datasets = carregar_dados_consulta()
 
     df, info = datasets["principal"]["df"], datasets["principal"]["info"]
@@ -124,48 +384,66 @@ def page_consulta():
 
     st.sidebar.title("Filtros - Encaminhamentos")
 
+    pending_table_urgs = st.session_state.pop("pending_sidebar_urg_filter", None)
+    if pending_table_urgs is not None:
+        st.session_state["sidebar_urg_filter"] = pending_table_urgs
+    pending_table_escolas = st.session_state.pop("pending_sidebar_escola_filter", None)
+    if pending_table_escolas is not None:
+        st.session_state["sidebar_escola_filter"] = pending_table_escolas
+
     df_filt_sidebar, selections = sidebar_filters(
         df,
         {"ano": True, "urg": True, "escola": True, "tipo": True},
     )
 
+    # Detecta mudança manual do filtro de escola na sidebar (fonte da interação)
+    current_sidebar_escolas = list(st.session_state.get("sidebar_escola_filter", []))
+    prev_sidebar_escolas = list(st.session_state.get("_prev_sidebar_escola_filter", []))
+    if set(map(str, current_sidebar_escolas)) != set(map(str, prev_sidebar_escolas)):
+        st.session_state["last_interaction_source"] = "sidebar"
+        st.session_state["escola_table_selection_consulta__selected_values"] = current_sidebar_escolas
+    st.session_state["_prev_sidebar_escola_filter"] = current_sidebar_escolas
+
     # --- SELETOR TEMPORAL MESTRE (INDICADORES E PÁGINA) ---
     current_year = datetime.datetime.now().year
     years_options = sorted([current_year - i for i in range(5)], reverse=True)
     
-    st.segmented_control(
-        label="Ano(s) de Referência:",
-        options=years_options,
-        selection_mode="multi",
-        key="massive_year_selector",
-        on_change=sync_home_to_sidebar,
-        label_visibility="collapsed"
-    )
+    with st.container(key="massive_year_selector"):
+        st.segmented_control(
+            label="Ano(s) de Referência:",
+            options=years_options,
+            selection_mode="multi",
+            key="home_year_buttons",
+            on_change=sync_home_to_sidebar,
+            label_visibility="collapsed"
+        )
     # Sincroniza a variável local com o estado global
     selected_years_comp = st.session_state["global_years"]
 
     # --- Aplicação Final dos Filtros (Fontes de Verdade Globais) ---
-    df_base_final = df.copy()
-    
-    # 1. Filtro de Escola (Cascata da Sidebar)
+    # Base imune ao filtro da própria escola (necessária para tabela mestre de escola)
+    df_base_sem_escola = df.copy()
+
+    # 1. Filtro de Tipo (Instituição)
+    if selections.get("tipo"):
+        all_types = set(df["Tipo"].dropna().unique())
+        selected_types = set(selections["tipo"])
+        if selected_types != all_types:
+            df_base_sem_escola = df_base_sem_escola[df_base_sem_escola["Tipo"].isin(selections["tipo"])]
+
+    # 2. Filtro de Anos (Global)
+    if selected_years_comp:
+        df_base_sem_escola = df_base_sem_escola[df_base_sem_escola["Ano"].isin(selected_years_comp)]
+    else:
+        df_base_sem_escola = df_base_sem_escola.iloc[0:0]
+
+    # 3. Filtro de Escola (aplicado no dashboard, mas não na tabela mestre de escola)
+    df_base_final = df_base_sem_escola.copy()
     if selections.get("escola"):
         all_schools = set(df["Escola"].dropna().unique())
         selected_schools = set(selections["escola"])
         if selected_schools != all_schools:
             df_base_final = df_base_final[df_base_final["Escola"].isin(selections["escola"])]
-            
-    # 2. Filtro de Tipo (Instituição)
-    if selections.get("tipo"):
-        all_types = set(df["Tipo"].dropna().unique())
-        selected_types = set(selections["tipo"])
-        if selected_types != all_types:
-            df_base_final = df_base_final[df_base_final["Tipo"].isin(selections["tipo"])]
-
-    # 3. Filtro de Anos (Global)
-    if selected_years_comp:
-        df_base_final = df_base_final[df_base_final["Ano"].isin(selected_years_comp)]
-    else:
-        df_base_final = pd.DataFrame()
         
     # 3. Filtro de URGs (Global - Vinculação Bidirecional)
     current_urgs = st.session_state["global_urgs"]
@@ -201,39 +479,25 @@ def page_consulta():
     df_filt = df_master_filtrado.copy()
     
     # --- Definições para Gráficos 'Top por URG' ---
-    # 1. Sem filtro de escola (para mostrar Top Escolas)
-    df_filt_no_escola = df_base_final.copy()
+    # 1. Sem filtro de escola (para mostrar Top Escolas), mas com filtro de encaminhamento
+    df_filt_no_escola = df_base_sem_escola.copy()
     if current_urgs:
         df_filt_no_escola = df_filt_no_escola[df_filt_no_escola["URG"].isin(current_urgs)]
+    if encaminhamentos_selecionados:
+        df_filt_no_escola = df_filt_no_escola[df_filt_no_escola["Encaminhamento"].isin(encaminhamentos_selecionados)]
     
     # 2. Sem filtro de encaminhamento (para mostrar Top Encaminhamentos e Tabela Comparativa)
     df_filt_no_enc = df_master_no_enc.copy()
     
     # --- LÓGICA DE SELEÇÃO NAS TABELAS TOP ---
-    # Escola
-    selected_escola_from_table = None
-    if "escola_table_selection_consulta" in st.session_state:
-        selection = st.session_state["escola_table_selection_consulta"]
-        rows = selection.get("selection", {}).get("rows", [])
-        if rows:
-            df_cmp_escola = build_comparativo_anual(df_filt_no_escola, "Escola")
-            if df_cmp_escola is not None:
-                selected_escola_from_table = get_selected_comparativo_value(
-                    df_cmp_escola, rows, "Escola"
-                )
-    
-    if selected_escola_from_table:
-        df_filt = df_filt[df_filt["Escola"] == selected_escola_from_table]
-        selections["escola"] = [selected_escola_from_table]
-
+    # Escola: o filtro efetivo do dashboard é sempre o da sidebar (fonte única de verdade).
     # Encaminhamento removido da seleção por tabela (Filtro Global via Sidebar agora é o padrão)
     selected_encs_from_table = []
 
     if encaminhamentos_selecionados:
-        df_filt = df_filt[df_filt["Encaminhamento"].isin(encaminhamentos_selecionados)]
         selections["encaminhamento"] = encaminhamentos_selecionados
-
-    selections["encaminhamento"] = list(set(selections.get("encaminhamento", []) + encaminhamentos_selecionados)) or encaminhamentos_disponiveis
+    else:
+        selections["encaminhamento"] = encaminhamentos_disponiveis
 
     # --- Geração do filtro_titulo Dinâmico (Data-Driven UI) ---
     def get_filter_display_string_for_title(selected_items_list, all_available_items_list):
@@ -285,12 +549,32 @@ def page_consulta():
         mime="text/csv",
     )
     
-    # 1. Indicador principal (Total Geral)
-    total_qtd = df_filt["Quantidade"].sum() if not df_filt.empty else 0
-    render_metric_cards([{"label": "TOTAL DE ENCAMINHAMENTOS", "value": total_qtd}])
-    
-    render_section_divider()
+    # --- Cálculo de Indicadores de Alunos (Sincronizado) ---
+    df_home = datasets["home"]["df"]
+    # Aplicamos os mesmos filtros globais ao DF de Home para consistência nos indicadores
+    df_home_filt = df_home.copy()
+    if selected_years_comp:
+        df_home_filt = df_home_filt[df_home_filt["Ano"].isin(selected_years_comp)]
+    if current_urgs:
+        df_home_filt = df_home_filt[df_home_filt["URG"].isin(current_urgs)]
+    if selections.get("escola"):
+        df_home_filt = df_home_filt[df_home_filt["Escola"].isin(selections["escola"])]
+    if selections.get("tipo") and "Tipo" in df_home_filt.columns:
+        df_home_filt = df_home_filt[df_home_filt["Tipo"].isin(selections["tipo"])]
 
+    total_alunos_escola = df_home_filt["QtdAlunoEscola"].sum() if not df_home_filt.empty else 0
+    total_alunos_atendidos = df_home_filt["QtdAluno"].sum() if not df_home_filt.empty else 0
+
+    # 1. Indicadores principais (Imunes ao filtro de encaminhamento específico)
+    total_qtd = df_master_no_enc["Quantidade"].sum() if not df_master_no_enc.empty else 0
+    render_metric_cards([
+        {"label": "TOTAL DE ALUNOS", "value": total_alunos_escola},
+        {"label": "ALUNOS ATENDIDOS", "value": total_alunos_atendidos},
+        {"label": "ENCAMINHAMENTOS", "value": total_qtd}
+    ])
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+    
+    
     # Sumário por tipo de consulta (Encaminhamento) - IMUNIDADE AO FILTRO DE REGULAÇÃO
     # Usamos df_filt_no_enc para que todos os rótulos apareçam mesmo com filtros ativos
     encaminhamentos_sum = (
@@ -316,49 +600,109 @@ def page_consulta():
             chunk = kpi_metrics[i : i + 5]
             render_metric_cards(
                 chunk, 
-                is_toggle=True, 
+                is_toggle=True,
                 active_labels=[l.upper() for l in encaminhamentos_selecionados],
-                on_click_callback=toggle_regulacao
+                on_click_callback=toggle_regulacao,
+                fixed_columns=5,
             )
+            if i + 5 < len(kpi_metrics):
+                st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
             
-        # NOTA: O render_metric_cards agora dispara o callback toggle_regulacao.
-        # Isso restaura a interatividade premium com o design unificado.
+        # Cards clicáveis com visual alinhado ao card total.
     else:
         st.info("Selecione ao menos um ano para visualizar os indicadores.")
     
     render_section_divider()
 
+    # --- NOVO: Tabela Comparativa de Performance por ANO (Encaminhamentos) ---
+    st.subheader("Tabela Comparativa de Performance por ANO (Encaminhamentos)")
+    df_cmp_ano_perf = build_comparativo_anual(
+        df_filt,
+        "Encaminhamento",
+        value_col="Quantidade",
+        pct_label="Total",
+    )
+    if df_cmp_ano_perf is not None:
+        df_ano_perf_aggrid, ano_perf_column_defs, _ = prepare_comparativo_aggrid_data(
+            df_cmp_ano_perf, include_selection_column=False
+        )
+
+        # Mantém a mesma ordem dos indicadores gerais (cards), preservando TOTAL no final.
+        if not df_ano_perf_aggrid.empty and not encaminhamentos_sum.empty:
+            first_col = df_ano_perf_aggrid.columns[0]
+            ordem_indicadores = {
+                str(nome).strip().upper(): idx
+                for idx, nome in enumerate(encaminhamentos_sum.index.tolist())
+            }
+            df_ano_perf_aggrid["_ordem_kpi"] = df_ano_perf_aggrid[first_col].map(
+                lambda x: ordem_indicadores.get(str(x).strip().upper(), 10**6)
+            )
+            df_ano_perf_aggrid["_is_total"] = (
+                df_ano_perf_aggrid[first_col].astype(str).str.strip().str.upper().eq("TOTAL")
+            )
+            df_ano_perf_aggrid = (
+                df_ano_perf_aggrid
+                .sort_values(by=["_is_total", "_ordem_kpi"], ascending=[True, True], kind="stable")
+                .drop(columns=["_ordem_kpi", "_is_total"])
+                .reset_index(drop=True)
+            )
+
+        df_ano_perf_body, ano_perf_footer = split_aggrid_footer(df_ano_perf_aggrid)
+
+        ano_perf_grid_options = {
+            "columnDefs": ano_perf_column_defs,
+            "defaultColDef": {
+                "resizable": True,
+                "sortable": True,
+                "filter": False,
+                "suppressMenu": True,
+            },
+            "pinnedBottomRowData": ano_perf_footer,
+        }
+
+        df_ano_perf_export = (
+            pd.concat([df_ano_perf_body, pd.DataFrame(ano_perf_footer)], ignore_index=True)
+            if ano_perf_footer
+            else df_ano_perf_body.copy()
+        )
+        with st.container(key="consulta_ano_actions_toolbar"):
+            render_table_toolbar(
+                df_ano_perf_export,
+                "comparativo_performance_ano_encaminhamentos.csv",
+                "ano_perf_table_consulta",
+            )
+
+        st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
+        render_saedas_aggrid(
+            df_ano_perf_body,
+            grid_options=ano_perf_grid_options,
+            key="ano_perf_table_consulta_aggrid",
+            incluir_total=bool(ano_perf_footer),
+            min_height=140,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.caption(
+            "Nota: As colunas '% Total' representam o percentual do Encaminhamento no respectivo ano. "
+            "As colunas 'Var%' mostram a variação em relação ao ano anterior."
+        )
+    else:
+        st.info("Dados insuficientes para gerar a tabela comparativa de performance por ano.")
+
+    render_section_divider()
+
     # --- PRIORIDADE 2 (MEIO): TABELA COMPARATIVA DE PERFORMANCE ---
     st.subheader("Performance por URG")
-    st.caption("Nota: Clique em qualquer linha de URG para filtrar o restante do dashboard. Esta tabela é sensível apenas ao filtro de Ano.")
+    st.caption("Nota: Clique em qualquer linha de URG para filtrar o restante do dashboard. Sensível aos filtros de Ano, Tipo e Encaminhamento.")
 
-    # Callback para sincronizar seleção da tabela com o estado global
-    def sync_urg_table_to_global_consulta():
-        if "urg_table_selection_consulta" in st.session_state:
-            selection = st.session_state["urg_table_selection_consulta"]
-            rows = selection.get("selection", {}).get("rows", [])
-            df_table = st.session_state.get("last_df_cmp_urg_consulta")
-            
-            if df_table is not None:
-                selected_urgs = []
-                for r in rows:
-                    try:
-                        urg_val = df_table.data.iloc[r][("URG", "")]
-                        if urg_val and urg_val != "TOTAL":
-                            selected_urgs.append(urg_val)
-                    except: continue
-                
-                st.session_state["global_urgs"] = selected_urgs
-                st.session_state["sidebar_urg_filter"] = selected_urgs
-                st.session_state["last_interaction_source"] = "table"
-
-    # Prepara DF para a tabela (Ignora filtros de URG, Escola e Encaminhamento - Sensível APENAS ao Ano)
     df_for_urg_table = df.copy()
+    if selections.get("tipo"):
+        all_types = set(df["Tipo"].dropna().unique())
+        if set(selections["tipo"]) != all_types:
+            df_for_urg_table = df_for_urg_table[df_for_urg_table["Tipo"].isin(selections["tipo"])]
     if selected_years_comp:
         df_for_urg_table = df_for_urg_table[df_for_urg_table["Ano"].isin(selected_years_comp)]
-    
-    # Nota: Não aplicamos filtro de Escola ou Encaminhamento aqui para garantir que todas as URGs apareçam na lista,
-    # permitindo que a tabela funcione como um controlador mestre de navegação.
+    if encaminhamentos_selecionados:
+        df_for_urg_table = df_for_urg_table[df_for_urg_table["Encaminhamento"].isin(encaminhamentos_selecionados)]
 
     current_selected_urgs = st.session_state.get("global_urgs", [])
     df_cmp_urg = build_comparativo_anual(
@@ -408,52 +752,67 @@ def page_consulta():
         if pre_selected_rows:
             grid_options["initialState"] = {"rowSelection": pre_selected_rows}
 
-        grid_height = calcular_altura_aggrid(df_cmp_urg_body, incluir_total=bool(footer_rows))
-
         # Barra de ferramentas
         df_cmp_urg_export = pd.concat([df_cmp_urg_body, pd.DataFrame(footer_rows)], ignore_index=True) if footer_rows else df_cmp_urg_body.copy()
-        render_table_toolbar(df_cmp_urg_export, "performance_urg_consulta.csv", "urg_table_consulta")
+        with st.container(key="consulta_urg_actions_toolbar"):
+            render_table_toolbar(df_cmp_urg_export, "performance_urg_consulta.csv", "urg_table_consulta")
+
+        # Detecta se o key mudou neste render (instância nova = resposta stale, ignorar)
+        urg_table_key = f"urg_table_consulta_{hash(str(current_selected_urgs))}"
+        _urg_key_changed = st.session_state.get("_prev_urg_table_key") != urg_table_key
+        st.session_state["_prev_urg_table_key"] = urg_table_key
 
         st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
         aggrid_response = render_saedas_aggrid(
             df_cmp_urg_body,
             grid_options=grid_options,
-            key=f"urg_table_consulta_{hash(str(current_selected_urgs))}",
+            key=urg_table_key,
             update_mode=GridUpdateMode.SELECTION_CHANGED,
             incluir_total=bool(footer_rows)
         )
         st.markdown('</div>', unsafe_allow_html=True)
 
         # Atualizar estado global com a seleção da tabela
+        # Ignorar se key mudou: grid é nova instância e a resposta é stale (JS ainda não disparou)
         selected_rows = aggrid_response.get("selected_rows", None)
-        if selected_rows is not None and urg_field:
+        if selected_rows is not None and urg_field and not _urg_key_changed:
             if isinstance(selected_rows, pd.DataFrame):
                 selected_rows = selected_rows.to_dict(orient="records")
             elif isinstance(selected_rows, dict):
                 selected_rows = [selected_rows]
-            
+
             new_selected_urgs = [row.get(urg_field) for row in selected_rows if row.get(urg_field) and row.get(urg_field) != "TOTAL"]
             if set(new_selected_urgs) != set(current_selected_urgs):
                 st.session_state["global_urgs"] = new_selected_urgs
+                st.session_state["pending_sidebar_urg_filter"] = new_selected_urgs
+                st.session_state["last_interaction_source"] = "table"
                 st.rerun()
     else:
         st.info("Dados insuficientes para gerar a tabela de performance.")
     
     # --- PRIORIDADE 3: DETALHAMENTO TOP POR URG (ESCOLAS E ENCAMINHAMENTOS) ---
     render_top_por_urg(
-        df_filt[df_filt["Ano"].isin(selected_years_comp)] if not df_filt.empty else pd.DataFrame(), 
+        df_filt_no_escola[df_filt_no_escola["Ano"].isin(selected_years_comp)] if not df_filt_no_escola.empty else pd.DataFrame(),
         "Quantidade", 
         "Principais Escolas por URG", 
         "Escola", 
         table_key="escola_table_selection_consulta",
-        active_row_value=selected_escola_from_table
+        active_row_value=st.session_state.get("sidebar_escola_filter", []),
+        selection_mode="multiple"
     )
-    render_top_por_urg(
-        df_filt[df_filt["Ano"].isin(selected_years_comp)] if not df_filt.empty else pd.DataFrame(), 
-        "Quantidade", 
-        "Principais Encaminhamentos por URG", 
-        "Encaminhamento"
+    # Sincronismo tabela -> sidebar (após renderização da tabela, com estado atualizado)
+    escolas_tabela_atual = st.session_state.get(
+        "escola_table_selection_consulta__selected_values", []
     )
+    current_sidebar_escolas = st.session_state.get("sidebar_escola_filter", [])
+    last_source = st.session_state.get("last_interaction_source", "")
+    if last_source != "sidebar" and set(map(str, escolas_tabela_atual)) != set(map(str, current_sidebar_escolas)):
+        st.session_state["pending_sidebar_escola_filter"] = escolas_tabela_atual
+        st.session_state["last_interaction_source"] = "table"
+        st.rerun()
+    elif last_source == "sidebar":
+        # Consome a mudança da sidebar sem sobrescrever com estado transitório da tabela
+        st.session_state["last_interaction_source"] = ""
 
     render_section_divider()
 
@@ -463,38 +822,11 @@ def page_consulta():
     render_section_divider()
 
     # --- DISTRIBUIÇÃO POR REGULAÇÃO (GRÁFICO AGRUPADO) ---
-    st.subheader("Distribuição por Regulação")
+    st.subheader("Distribuição por Encaminhamentos")
     render_grouped_bar_anual(df_filt, "Quantidade", "", x_col="Encaminhamento", orientation="h")
     
-    st.markdown("### Tabela Comparativa de Consultas por Ano")
-    df_cmp_regulacao = build_comparativo_anual(df_filt, "Encaminhamento", pct_label="Cobertura")
-    if df_cmp_regulacao is not None:
-        df_reg_aggrid, reg_column_defs, _ = prepare_comparativo_aggrid_data(df_cmp_regulacao, include_selection_column=False)
-        df_reg_body, reg_footer = split_aggrid_footer(df_reg_aggrid)
-        
-        reg_grid_options = {
-            "columnDefs": reg_column_defs,
-            "defaultColDef": {"resizable": True, "sortable": True, "filter": False, "suppressMenu": True},
-            "pinnedBottomRowData": reg_footer,
-        }
-        reg_grid_height = calcular_altura_aggrid(df_reg_body, incluir_total=bool(reg_footer))
-
-        # Barra de ferramentas
-        df_reg_export = pd.concat([df_reg_body, pd.DataFrame(reg_footer)], ignore_index=True) if reg_footer else df_reg_body.copy()
-        render_table_toolbar(df_reg_export, "comparativo_regulacao_consulta.csv", "reg_table_consulta")
-
-        st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
-        render_saedas_aggrid(
-            df_reg_body,
-            grid_options=reg_grid_options,
-            key="reg_table_consulta_aggrid",
-            incluir_total=bool(reg_footer)
-        )
-        st.markdown('</div>', unsafe_allow_html=True)
-        st.caption("Nota: As colunas '% Cobertura' representam o percentual de representatividade do Encaminhamento sobre o total realizado.")
-
     render_section_divider()
-    st.subheader("Detalhamento por Aluno (ConsultaAluno)")
+    st.subheader("Detalhamento por Aluno")
     if df_aluno.empty:
         st.info(
             "Dados de alunos não estão disponíveis ou houve erro na leitura do CSV."
@@ -505,9 +837,10 @@ def page_consulta():
         df_aluno_base = filter_by_sidebar_selections(df_aluno, selections)
         df_aluno_base = df_aluno_base[df_aluno_base["Ano"].isin(selected_years_comp)] if not df_aluno_base.empty else pd.DataFrame()
         
-        # Sincronizar com a seleção da tabela de escolas (se houver)
-        if selected_escola_from_table:
-            df_aluno_filtrado = df_aluno_base[df_aluno_base["Escola"] == selected_escola_from_table]
+        # Sincronizar com a seleção efetiva de escolas (fonte sidebar)
+        selected_escolas_effective = selections.get("escola", [])
+        if selected_escolas_effective:
+            df_aluno_filtrado = df_aluno_base[df_aluno_base["Escola"].isin(selected_escolas_effective)]
         else:
             df_aluno_filtrado = df_aluno_base.copy()
 
@@ -650,58 +983,32 @@ def page_consulta():
                 col_order = ["Aluno", "DataNascimento", "Sexo", "URG", "Escola", "Serie", "Turma"]
                 col_order = [c for c in col_order if c in df_aluno_final.columns] + anos_cols + ["Total", "Menu"]
                 df_aluno_final = df_aluno_final[col_order].fillna("")
-            else:
-                df_aluno_final = pd.DataFrame()
+                # Renomear coluna Menu para Perfil para exibição
+                df_aluno_final = df_aluno_final.rename(columns={"Menu": "Perfil"})
+                preview_limit = 500
+                df_aluno_head = df_aluno_final.head(preview_limit).reset_index(drop=True)
 
-            preview_limit = 500
-            df_aluno_head = df_aluno_final.head(preview_limit).reset_index(drop=True)
-
-            style_fn_aluno = build_row_style_fn("Aluno")
-            hover_styles_aluno = get_table_hover_styles()
-
-            if not df_aluno_head.empty:
-                gb = GridOptionsBuilder.from_dataframe(df_aluno_head)
-                gb.configure_default_column(resizable=True, sortable=True, filter=False, suppressMenu=True)
-                gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=15)
-                
-                # Configura link de perfil via JsCode
-                gb.configure_column(
-                    "Menu",
-                    headerName="Perfil",
-                    cellRenderer=JsCode("""
-                        function(params) {
-                            if (!params.value) return '';
-                            return '<a href="' + params.value + '" target="_self" style="text-decoration:none; color:#2e7d32; font-weight:bold;">📄 Ver Perfil</a>';
-                        }
-                    """),
-                    width=100,
-                    pinned="right"
+                # Aplicar design padrão (Zebra, Hover, etc)
+                styled_aluno = (
+                    df_aluno_head.style.pipe(apply_saedas_design, categoria_col="Aluno")
+                    .set_properties(**{"text-align": "left"})
+                    .hide(axis="index")
                 )
-
-                # Adiciona índice numerado de 1 a N
-                gb.configure_column(
-                    "",
-                    headerName="",
-                    valueGetter="node.rowIndex + 1",
-                    pinned="left",
-                    width=60,
-                    maxWidth=60,
-                    lockPinned=True,
-                    cellStyle={"textAlign": "center", "fontWeight": "bold"}
-                )
-                
-                grid_options = gb.build()
-                grid_height = calcular_altura_aggrid(df_aluno_head, limite_linhas=15)
 
                 # Barra de ferramentas
-                render_table_toolbar(df_aluno_head, "detalhes_alunos_consulta.csv", "aluno_table_consulta")
+                with st.container(key="consulta_aluno_actions_toolbar"):
+                    render_table_toolbar(df_aluno_head, "detalhes_alunos_consulta.csv", "aluno_table_consulta")
 
                 st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
-                render_saedas_aggrid(
-                    df_aluno_head,
-                    grid_options=grid_options,
-                    key="aluno_table_consulta_aggrid",
-                    max_rows=15
+                st.dataframe(
+                    styled_aluno,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Perfil": st.column_config.LinkColumn(
+                            "Perfil", display_text="📄 Ver Perfil"
+                        )
+                    },
                 )
                 st.markdown('</div>', unsafe_allow_html=True)
             else:

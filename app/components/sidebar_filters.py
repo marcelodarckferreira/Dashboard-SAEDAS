@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from app.utils.state_manager import sync_sidebar_to_home, sync_sidebar_urg_to_home
+from app.utils.state_manager import sync_sidebar_to_home, sync_sidebar_urg_to_home, sync_sidebar_escola_to_global
 
 def sidebar_filters(df, filter_config):
     """
@@ -102,6 +102,7 @@ def sidebar_filters(df, filter_config):
         urgs_selecionadas_usr = st.sidebar.multiselect(
             "Selecione a(s) URG(s):",
             options=urgs_disponiveis_geral,
+            default=st.session_state.get("sidebar_urg_filter", []),
             key="sidebar_urg_filter",
             on_change=sync_sidebar_urg_to_home,
             placeholder="Todas"
@@ -129,8 +130,10 @@ def sidebar_filters(df, filter_config):
         escolas_selecionadas_usr = st.sidebar.multiselect(
             "Selecione a(s) Escola(s):",
             options=escolas_disponiveis,
+            default=st.session_state.get("sidebar_escola_filter", []),
             placeholder="Todas as Escolas",
-            key="sidebar_escola_filter"
+            key="sidebar_escola_filter",
+            on_change=sync_sidebar_escola_to_global
         )
         escolas_para_aplicar_filtro = escolas_disponiveis if not escolas_selecionadas_usr else escolas_selecionadas_usr
         selections_dict['escola'] = escolas_para_aplicar_filtro

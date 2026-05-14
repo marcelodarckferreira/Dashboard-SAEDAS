@@ -88,7 +88,7 @@ def page_aluno():
         "Resumo unificado com histórico de encaminhamentos, exames, vacinação e nutrição."
     )
     filters_placeholder = st.empty()
-    # apply_global_css() — Já injetado no app.py
+    # apply_global_css() — Já injetado no main.py
     st.markdown("---")
 
     datasets = carregar_dados_aluno()
@@ -316,7 +316,7 @@ def page_aluno():
                     markers=True,
                 )
                 fig.update_layout(separators=",.")
-                st.plotly_chart(fig, width="stretch")
+                st.plotly_chart(fig, use_container_width=True)
                 ordem_metricas = ["Peso", "Altura", "IMC"]
                 tabela_metricas = evol_medias.pivot(
                     index="Métrica", columns="Ano", values="Valor"
@@ -390,7 +390,7 @@ def page_aluno():
                     tabela_comb = tabela_comb.drop(columns=["Tipo"], errors="ignore")
                     st.dataframe(
                         tabela_comb,
-                        width="stretch",
+                        use_container_width=True,
                         hide_index=True,
                     )
 
@@ -411,7 +411,7 @@ def page_aluno():
             .fillna(0)
             .astype(int)
         )
-        st.dataframe(pivot_categorias, width="stretch")
+        st.dataframe(pivot_categorias, use_container_width=True)
 
     def render_section(
         df_base: pd.DataFrame, titulo: str, extra_cols: list[str] | None = None
@@ -439,7 +439,7 @@ def page_aluno():
         ]
         st.dataframe(
             df_base[cols_to_show].sort_values(sort_cols, na_position="last"),
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
         )
 

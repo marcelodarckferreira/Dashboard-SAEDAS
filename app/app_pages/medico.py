@@ -1,3 +1,4 @@
+from app.utils.page_helpers import render_section_divider
 import re
 import datetime
 
@@ -6,6 +7,8 @@ import plotly.express as px
 import streamlit as st
 from urllib.parse import urlencode
 
+import json
+from st_aggrid import GridUpdateMode, JsCode
 from components.footer_personal import footer_personal
 from components.sidebar_filters import sidebar_filters
 from app.utils.data_loader import load_csv
@@ -15,10 +18,14 @@ from app.utils.page_helpers import (
     render_metric,
     render_top_por_urg,
     format_filters_applied,
+    prepare_comparativo_aggrid_data,
+    render_saedas_aggrid,
+    split_aggrid_footer,
+    render_table_toolbar,
 )
 from app.utils.state_manager import init_global_state, sync_home_to_sidebar, sync_home_urg_to_sidebar
 from app.utils.schemas import SCHEMA_MEDICO, SCHEMA_MEDICO_ALUNO, SCHEMA_MEDICO_ANO
-from app.utils.styles import apply_global_css, render_metric_cards, build_row_style_fn, get_table_hover_styles
+from app.utils.styles import apply_global_css, render_metric_cards, apply_saedas_design, build_row_style_fn, get_table_hover_styles
 
 
 # ── Utilitários de ordenação por numeral romano ───────────────────────────────
@@ -69,16 +76,203 @@ def carregar_dados_medico():
 
 
 def page_medico():
-    # Inicializa o estado global sincronizado (Anos e URGs)
     init_global_state()
+    apply_global_css()
 
     st.title("Visão Geral dos Atendimentos Médicos")
     st.markdown(
         "Resumo consolidado dos atendimentos médicos realizados por ano, URG e escola."
     )
+    st.markdown(
+        """
+        <style>
+            /* Container Principal - Ajuste de Espaçamento Vertical */
+            .st-key-massive_year_selector {
+                margin-top: -1.5rem !important;
+                margin-bottom: 1rem !important;
+            }
+
+            /* Alvo em QUALQUER botão dentro do container do seletor */
+            .st-key-massive_year_selector button {
+                height: 56px !important;
+                min-width: 120px !important;
+                border-radius: 0 !important;
+                background-color: #1e293b !important;
+                border: 1px solid #334155 !important;
+                border-right: none !important;
+                transition: all 0.3s ease !important;
+                margin: 0 !important;
+            }
+
+            /* Arredondamento apenas nas extremidades do GRUPO */
+            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:first-of-type button,
+            .st-key-massive_year_selector button:first-of-type {
+                border-radius: 10px 0 0 10px !important;
+            }
+
+            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:last-of-type button,
+            .st-key-massive_year_selector button:last-of-type {
+                border-radius: 0 10px 10px 0 !important;
+                border-right: 1px solid #334155 !important;
+            }
+
+            /* Alvo em QUALQUER parágrafo ou texto dentro dos botões */
+            .st-key-massive_year_selector button p,
+            .st-key-massive_year_selector button span {
+                font-size: 1.85rem !important;
+                font-weight: 700 !important;
+                color: #f8fafc !important;
+                line-height: 1 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+
+            /* Estado Ativo */
+            .st-key-massive_year_selector button[data-testid*="Active"],
+            .st-key-massive_year_selector button[aria-pressed="true"] {
+                background-color: #3b82f6 !important;
+                border-color: #60a5fa !important;
+                box-shadow: none !important;
+            }
+
+            .st-key-massive_year_selector button[data-testid*="Active"] p,
+            .st-key-massive_year_selector button[aria-pressed="true"] p {
+                color: #ffffff !important;
+            }
+            .home-metric-label {
+                font-size: 0.78rem !important;
+                font-weight: 700 !important;
+                color: #94a3b8 !important;
+                text-transform: uppercase !important;
+                letter-spacing: 0.05em !important;
+                margin-bottom: 4px !important;
+            }
+            .home-metric-value {
+                font-size: 1.85rem !important;
+                font-weight: 800 !important;
+                color: #f1f5f9 !important;
+                line-height: 1.1 !important;
+            }
+            .home-metric-card {
+                border-radius: 12px !important;
+                padding: 20px !important;
+                height: 100% !important;
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: center !important;
+                border: 1.5px solid transparent !important;
+                background-origin: border-box !important;
+                background-clip: padding-box, border-box !important;
+                transition: all 0.25s ease !important;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+            }
+            .metric-card-static {
+                background-image: linear-gradient(#0f172a, #0f172a), linear-gradient(135deg, #94a3b8 0%, #334155 100%) !important;
+            }
+            div[class*="st-key-btn_kpi_"] button {
+                min-height: 96px !important;
+                border-radius: 12px !important;
+                padding: 12px 14px !important;
+                border: 1.5px solid #334155 !important;
+                background: #0f172a !important;
+                color: #f1f5f9 !important;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+                transition: all 0.25s ease !important;
+                white-space: pre-line !important;
+                text-align: left !important;
+                align-items: flex-start !important;
+                justify-content: center !important;
+                line-height: 1.2 !important;
+                font-size: 0.78rem !important;
+                font-weight: 700 !important;
+                letter-spacing: 0.05em !important;
+                text-transform: uppercase !important;
+            }
+            div[class*="st-key-btn_kpi_"] button p {
+                margin: 0 !important;
+                white-space: pre-line !important;
+                color: #94a3b8 !important;
+            }
+            div[class*="st-key-btn_kpi_"] button p strong {
+                display: block !important;
+                margin-top: 6px !important;
+                color: #f1f5f9 !important;
+                font-size: 2rem !important;
+                line-height: 1.05 !important;
+                letter-spacing: 0 !important;
+                text-transform: none !important;
+            }
+            div[class*="st-key-btn_kpi_"] button:hover {
+                transform: translateY(-3px) !important;
+                border-color: #38bdf8 !important;
+                box-shadow: 0 0 20px rgba(56, 189, 248, 0.3), 0 10px 25px rgba(0, 0, 0, 0.5) !important;
+            }
+            div[class*="st-key-btn_kpi_"] button[kind="primary"] {
+                border-color: #38bdf8 !important;
+                background: linear-gradient(135deg, rgba(56, 189, 248, 0.18) 0%, rgba(30, 64, 175, 0.22) 100%) !important;
+            }
+            .st-key-medico_urg_actions_toolbar div[data-testid="stHorizontalBlock"],
+            .st-key-escola_table_selection_medico_actions_toolbar div[data-testid="stHorizontalBlock"],
+            .st-key-medico_cobertura_actions_toolbar div[data-testid="stHorizontalBlock"],
+            .st-key-medico_aluno_actions_toolbar div[data-testid="stHorizontalBlock"] {
+                gap: 0 !important;
+                --st-horizontal-block-gap: 0px !important;
+                justify-content: flex-end !important;
+                align-items: center !important;
+                padding-right: 6px !important;
+                overflow: visible !important;
+            }
+            .st-key-medico_urg_actions_toolbar div[data-testid="stColumn"],
+            .st-key-escola_table_selection_medico_actions_toolbar div[data-testid="stColumn"],
+            .st-key-medico_cobertura_actions_toolbar div[data-testid="stColumn"],
+            .st-key-medico_aluno_actions_toolbar div[data-testid="stColumn"] {
+                padding: 0 !important;
+                margin: 0 !important;
+                width: auto !important;
+                flex: 0 1 auto !important;
+                overflow: visible !important;
+            }
+            .st-key-medico_urg_actions_toolbar button,
+            .st-key-escola_table_selection_medico_actions_toolbar button,
+            .st-key-medico_cobertura_actions_toolbar button,
+            .st-key-medico_aluno_actions_toolbar button {
+                background: transparent !important;
+                border: 1px solid #334155 !important;
+                border-right: none !important;
+                border-radius: 0 !important;
+                color: #94a3b8 !important;
+                height: 34px !important;
+                padding: 0 12px !important;
+                margin: 0 !important;
+                white-space: nowrap !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+            }
+            .st-key-medico_urg_actions_toolbar div[class*="st-key-copy_"] button,
+            .st-key-escola_table_selection_medico_actions_toolbar div[class*="st-key-copy_"] button,
+            .st-key-medico_cobertura_actions_toolbar div[class*="st-key-copy_"] button,
+            .st-key-medico_aluno_actions_toolbar div[class*="st-key-copy_"] button {
+                border-radius: 6px 0 0 6px !important;
+            }
+            .st-key-medico_urg_actions_toolbar div[class*="st-key-download_"] button,
+            .st-key-escola_table_selection_medico_actions_toolbar div[class*="st-key-download_"] button,
+            .st-key-medico_cobertura_actions_toolbar div[class*="st-key-download_"] button,
+            .st-key-medico_aluno_actions_toolbar div[class*="st-key-download_"] button {
+                border-right: 1px solid #334155 !important;
+                border-radius: 0 6px 6px 0 !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
     filters_placeholder = st.empty()
-    st.markdown("---")
-    # apply_global_css() — Já injetado no app.py
+    
+    
+    render_section_divider()
+    st.markdown(" ")
+    
+    # apply_global_css() — Já injetado no main.py
 
     datasets = carregar_dados_medico()
 
@@ -135,10 +329,30 @@ def page_medico():
 
     st.sidebar.title("Filtros - Médico")
 
+    # Sincronização de Filtros Pendentes (Vindos de Interação com Tabelas)
+    pending_table_urgs = st.session_state.pop("pending_sidebar_urg_filter", None)
+    if pending_table_urgs is not None:
+        st.session_state["sidebar_urg_filter"] = pending_table_urgs
+        st.session_state["global_urgs"] = pending_table_urgs
+        st.session_state["last_interaction_source"] = "table"
+
+    pending_table_escolas = st.session_state.pop("pending_sidebar_escola_filter", None)
+    if pending_table_escolas is not None:
+        st.session_state["sidebar_escola_filter"] = pending_table_escolas
+        st.session_state["last_interaction_source"] = "table_escola"
+
     df_filt_sidebar, selections = sidebar_filters(
         df,
         {"ano": True, "urg": True, "escola": True, "tipo": True},
     )
+
+    # Rastreamento de Mudança na Sidebar vs Tabela para Escola
+    current_sidebar_escolas = list(st.session_state.get("sidebar_escola_filter", []))
+    prev_sidebar_escolas = list(st.session_state.get("_prev_sidebar_escola_filter", []))
+    if set(map(str, current_sidebar_escolas)) != set(map(str, prev_sidebar_escolas)):
+        st.session_state["last_interaction_source"] = "sidebar"
+        st.session_state["escola_table_selection_medico__selected_values"] = current_sidebar_escolas
+    st.session_state["_prev_sidebar_escola_filter"] = current_sidebar_escolas
 
     atendimento_col = "Atendimento"
     atendimentos_disponiveis = (
@@ -149,68 +363,77 @@ def page_medico():
     # Filtro de Atendimento removido conforme solicitação
     atendimentos_selecionados = []
 
+    def toggle_atendimento(label: str) -> None:
+        """Alterna a seleção de um tipo de atendimento médico via KPI card."""
+        current = list(st.session_state.get("medico_atendimento_multiselect", []))
+        if label in current:
+            current.remove(label)
+        else:
+            current.append(label)
+        st.session_state["medico_atendimento_multiselect"] = current
+
     # --- SELETOR TEMPORAL MESTRE (INDICADORES E PÁGINA) ---
     current_year = datetime.datetime.now().year
     years_options = sorted([current_year - i for i in range(5)], reverse=True)
     
-    st.segmented_control(
-        label="Ano(s) de Referência:",
-        options=years_options,
-        selection_mode="multi",
-        key="home_year_buttons",
-        on_change=sync_home_to_sidebar,
-        label_visibility="collapsed"
-    )
+    with st.container(key="massive_year_selector"):
+        st.segmented_control(
+            label="Ano(s) de Referência:",
+            options=years_options,
+            selection_mode="multi",
+            key="home_year_buttons",
+            on_change=sync_home_to_sidebar,
+            label_visibility="collapsed"
+        )
     # Sincroniza a variável local com o estado global
     selected_years_comp = st.session_state["global_years"]
 
     # --- Aplicação Final dos Filtros (Fontes de Verdade Globais) ---
-    df_base_final = df.copy()
+    df_base_sem_escola = df.copy()
     
-    # 1. Filtro de Escola (Cascata da Sidebar)
-    if selections.get("escola"):
-        all_schools = set(df["Escola"].dropna().unique())
-        selected_schools = set(selections["escola"])
-        if selected_schools != all_schools:
-            df_base_final = df_base_final[df_base_final["Escola"].isin(selections["escola"])]
-            
-    # 2. Filtro de Tipo (Instituição)
+    # 1. Filtro de Tipo (Instituição)
     if selections.get("tipo"):
         all_types = set(df["Tipo"].dropna().unique())
-        selected_types = set(selections["tipo"])
-        if selected_types != all_types:
-            df_base_final = df_base_final[df_base_final["Tipo"].isin(selections["tipo"])]
-
-    # 3. Filtro de Anos (Global)
+        if set(selections["tipo"]) != all_types:
+            df_base_sem_escola = df_base_sem_escola[df_base_sem_escola["Tipo"].isin(selections["tipo"])]
+            
+    # 2. Filtro de Anos (Global)
     if selected_years_comp:
-        df_base_final = df_base_final[df_base_final["Ano"].isin(selected_years_comp)]
+        df_base_sem_escola = df_base_sem_escola[df_base_sem_escola["Ano"].isin(selected_years_comp)]
     else:
-        df_base_final = pd.DataFrame()
-        
-    # 4. Filtro de Atendimento (Sidebar)
-    if atendimentos_selecionados:
-        df_base_final = df_base_final[df_base_final[atendimento_col].isin(atendimentos_selecionados)]
+        df_base_sem_escola = pd.DataFrame()
 
-    # 5. Filtro de URGs (Global - Vinculação Bidirecional)
+    df_base_final = df_base_sem_escola.copy()
+    # 3. Filtro de Escola (Cascata da Sidebar)
+    if selections.get("escola"):
+        all_schools = set(df["Escola"].dropna().unique())
+        if set(selections["escola"]) != all_schools:
+            df_base_final = df_base_final[df_base_final["Escola"].isin(selections["escola"])]
+
+    # 4. Filtro de URGs (Global - Vinculação Bidirecional)
     current_urgs = st.session_state["global_urgs"]
     if current_urgs:
-        df_master_filtrado = df_base_final[df_base_final["URG"].isin(current_urgs)]
+        df_master_no_atend = df_base_final[df_base_final["URG"].isin(current_urgs)]
     else:
-        df_master_filtrado = df_base_final.copy()
+        df_master_no_atend = df_base_final.copy()
+
+    # 5. Filtro de Atendimento (Sidebar)
+    if atendimentos_selecionados:
+        df_master_filtrado = df_master_no_atend[df_master_no_atend[atendimento_col].isin(atendimentos_selecionados)]
+    else:
+        df_master_filtrado = df_master_no_atend.copy()
 
     # Substitui df_filt pelo filtrado final
     df_filt = df_master_filtrado.copy()
 
     # --- Definições para Gráficos 'Top por URG' ---
-    # 1. Sem filtro de escola e tipo (para mostrar todas as Escolas da URG/Ano)
-    df_filt_no_escola = df.copy()
-    if selected_years_comp:
-        df_filt_no_escola = df_filt_no_escola[df_filt_no_escola["Ano"].isin(selected_years_comp)]
+    # 1. Sem filtro de escola (mas com Tipo, Ano e URG)
+    df_filt_no_escola = df_base_sem_escola.copy()
     if current_urgs:
         df_filt_no_escola = df_filt_no_escola[df_filt_no_escola["URG"].isin(current_urgs)]
         
-    # 2. Com filtro de escola (para mostrar Top Atendimentos)
-    df_filt_no_atend = df_filt.copy()
+    # 2. Sem filtro de Atendimento (mas com Tipo, Ano, Escola e URG)
+    df_filt_no_atend = df_master_no_atend.copy()
 
     # --- Geração do filtro_titulo Dinâmico (Data-Driven UI) ---
     def get_filter_display_string_for_title(selected_items_list, all_available_items_list):
@@ -248,19 +471,10 @@ def page_medico():
     )
     urgs_aplicadas = selections.get("urg", [])
 
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("Exportar dados")
-    csv_export_encoding = "utf-8"
-    csv = df_filt.to_csv(index=False, sep=";").encode(csv_export_encoding)
-    st.sidebar.download_button(
-        label="Exportar CSV (Médico)",
-        data=csv,
-        file_name="dados_filtrados_medico.csv",
-        mime="text/csv",
-    )
+
 
     # --- PRIORIDADE 1 (TOPO): MÉTRICAS ---
-    
+
     # Calcula total de alunos (QtdAluno) do Home filtrado pelos anos do componente e seleções da sidebar
     df_home = datasets["home"]["df"].copy()
     total_alunos = 0
@@ -276,32 +490,15 @@ def page_medico():
             df_home["QtdAlunoEscola"] = pd.to_numeric(df_home["QtdAlunoEscola"], errors="coerce").fillna(0)
             total_alunos = int(df_home["QtdAlunoEscola"].sum())
 
-    col_atend, col_alunos = st.columns(2)
-    with col_atend:
-        render_metric_cards([("TOTAL DE ATENDIMENTOS MÉDICOS", df_filt["Quantidade"].sum() if not df_filt.empty else 0)])
-    with col_alunos:
-        render_metric_cards([("TOTAL GERAL DE ALUNOS", total_alunos)])
+    total_atend = df_filt["Quantidade"].sum() if not df_filt.empty else 0
 
-    # ── Cards: Top URGs por atendimentos (ordenados por numeral romano) - CAIXA ALTA ──────
-    urg_sum = (
-        df_filt.groupby("URG")["Quantidade"].sum()
-        if not df_filt.empty and "URG" in df_filt.columns
-        else pd.Series(dtype="float")
-    )
-    urg_sum = urg_sum[urg_sum > 0]
-    if not urg_sum.empty:
-        urg_sum = urg_sum.reset_index()
-        urg_sum["_order"] = urg_sum["URG"].map(_urg_sort_key)
-        urg_sum = urg_sum.sort_values("_order").drop(columns="_order")
-        urg_sum = urg_sum.set_index("URG")["Quantidade"]
-        for start in range(0, min(len(urg_sum), 10), 5):
-            slice_urg = urg_sum.iloc[start : start + 5]
-            cols = st.columns(5)
-            for col, (nome, valor) in zip(cols, slice_urg.items()):
-                with col:
-                    # Rótulo da URG em CAIXA ALTA e sem comportamento de clique
-                    render_metric_cards([(f"{str(nome).upper()}", valor)])
-    else:
+    render_metric_cards([
+        {"label": "TOTAL DE ATENDIMENTOS MÉDICOS", "value": total_atend},
+        {"label": "TOTAL GERAL DE ALUNOS", "value": total_alunos}
+    ])
+    st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+
+    if df_filt.empty:
         st.info("Selecione ao menos um ano para visualizar os indicadores.")
     
     st.markdown("---")
@@ -310,224 +507,104 @@ def page_medico():
     st.subheader("Performance por URG")
     st.caption("Nota: Clique em qualquer linha de URG para filtrar o restante do dashboard. Esta tabela é sensível apenas ao filtro de Ano.")
 
-    # Callback para sincronizar seleção da tabela com o estado global
-    def sync_urg_table_to_global_medico():
-        if "urg_table_selection_medico" in st.session_state:
-            selection = st.session_state["urg_table_selection_medico"]
-            rows = selection.get("selection", {}).get("rows", [])
-            df_table = st.session_state.get("last_df_pivot_medico")
+    df_for_urg_table = df.copy()
+    if selected_years_comp:
+        df_for_urg_table = df_for_urg_table[df_for_urg_table["Ano"].isin(selected_years_comp)]
+
+    current_selected_urgs = st.session_state.get("global_urgs", [])
+    df_cmp_urg = build_comparativo_anual(df_for_urg_table, "URG", active_row_value=current_selected_urgs)
+
+    if df_cmp_urg is not None:
+        df_cmp_urg_aggrid, column_defs, column_map = prepare_comparativo_aggrid_data(df_cmp_urg)
+        df_cmp_urg_body, footer_rows = split_aggrid_footer(df_cmp_urg_aggrid)
+        urg_field = next((f for f, col in column_map.items() if col == "URG" or col == ("URG", "")), None)
+
+        pre_selected_rows = []
+        if urg_field and current_selected_urgs:
+            pre_selected_rows = [idx for idx, val in enumerate(df_cmp_urg_body[urg_field].tolist()) if val in current_selected_urgs]
+
+        selected_urgs_js = json.dumps(list(map(str, current_selected_urgs)))
+        urg_field_js = json.dumps(urg_field)
+        sync_selection_js = JsCode(f"""
+            function(params) {{
+                const selectedUrgs = new Set({selected_urgs_js});
+                const urgField = {urg_field_js};
+                if (!params.api || !urgField) return;
+                params.api.forEachNode(function(node) {{
+                    const rowUrg = node.data ? String(node.data[urgField] || '') : '';
+                    node.setSelected(selectedUrgs.has(rowUrg));
+                }});
+            }}
+        """)
+
+        grid_options = {
+            "columnDefs": column_defs,
+            "defaultColDef": {"resizable": True, "sortable": True, "filter": False, "suppressMenu": True},
+            "rowSelection": "multiple",
+            "rowMultiSelectWithClick": True,
+            "pinnedBottomRowData": footer_rows,
+            "onFirstDataRendered": sync_selection_js,
+            "onRowDataUpdated": sync_selection_js,
+        }
+        if pre_selected_rows:
+            grid_options["initialState"] = {"rowSelection": pre_selected_rows}
+
+        df_cmp_urg_export = pd.concat([df_cmp_urg_body, pd.DataFrame(footer_rows)], ignore_index=True) if footer_rows else df_cmp_urg_body.copy()
+        with st.container(key="medico_urg_actions_toolbar"):
+            render_table_toolbar(df_cmp_urg_export, "performance_urg_medico.csv", "urg_table_medico")
+
+        st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
+        aggrid_response = render_saedas_aggrid(
+            df_cmp_urg_body,
+            grid_options=grid_options,
+            key=f"urg_table_medico_{hash(str(current_selected_urgs))}",
+            update_mode=GridUpdateMode.SELECTION_CHANGED,
+            incluir_total=bool(footer_rows),
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        selected_rows = aggrid_response.get("selected_rows", None)
+        if selected_rows is not None and urg_field:
+            if isinstance(selected_rows, pd.DataFrame):
+                selected_rows = selected_rows.to_dict(orient="records")
+            elif isinstance(selected_rows, dict):
+                selected_rows = [selected_rows]
+            new_selected_urgs = [row.get(urg_field) for row in selected_rows if row.get(urg_field) and row.get(urg_field) != "TOTAL"]
             
-            if df_table is not None:
-                selected_urgs = []
-                for r in rows:
-                    try:
-                        urg_val = df_table.iloc[r]["URG"]
-                        if urg_val and urg_val != "TOTAL":
-                            selected_urgs.append(urg_val)
-                    except: continue
-                
-                st.session_state["global_urgs"] = selected_urgs
-                st.session_state["sidebar_urg_filter"] = selected_urgs
+            # Proteção contra reset indesejado durante o remount do componente (key change)
+            is_empty_on_remount = (not new_selected_urgs and current_selected_urgs and st.session_state.get("last_interaction_source") != "table")
+            
+            if not is_empty_on_remount and set(new_selected_urgs) != set(current_selected_urgs):
+                st.session_state["global_urgs"] = new_selected_urgs
+                st.session_state["pending_sidebar_urg_filter"] = new_selected_urgs
                 st.session_state["last_interaction_source"] = "table"
-
-    if df_ano_exibir.empty:
-        st.info("Dados agregados de Médico por ano não estão disponíveis.")
+                st.rerun()
     else:
-        import numpy as np
-        # Prepara DF para a tabela (Ignora filtros de URG e Escola - Sensível APENAS ao Ano)
-        # Nota: Não aplicamos filtro de Escola aqui para garantir que todas as URGs apareçam na lista,
-        # permitindo que a tabela funcione como um controlador mestre de navegação.
-        df_ano_urg = df_ano_exibir.copy()
-
-        year_cols_ano = [str(yc) for yc in selected_years_comp if str(yc) in df_ano_urg.columns]
-
-        if not df_ano_urg.empty and year_cols_ano and "URG" in df_ano_urg.columns:
-            for yc in year_cols_ano:
-                df_ano_urg[yc] = pd.to_numeric(df_ano_urg[yc], errors="coerce").fillna(0)
-            df_pivot = df_ano_urg.groupby("URG")[year_cols_ano].sum().reset_index()
-
-            # Cálculos anuais: % Total para todos os anos
-            for year in year_cols_ano:
-                total_ano = df_pivot[year].sum()
-                df_pivot[f"% Total {year[-2:]}"] = (
-                    (df_pivot[year] / total_ano * 100) if total_ano > 0 else 0
-                ).round(1)
-
-            # Cálculos interanuais: Var% em relação ao ano anterior
-            for prev, curr in zip(year_cols_ano, year_cols_ano[1:]):
-                var_pct_col = f"Var% {curr[-2:]}-{prev[-2:]}"
-                diff = df_pivot[curr] - df_pivot[prev]
-                df_pivot[var_pct_col] = (diff / df_pivot[prev].replace(0, float("nan")) * 100).round(1)
-
-            # Ordenação obrigatória: Ano, % Total, Var%
-            ordered_cols = ["URG"]
-            for i, year in enumerate(year_cols_ano):
-                ordered_cols.append(year)
-                ordered_cols.append(f"% Total {year[-2:]}")
-                if i > 0:
-                    prev = year_cols_ano[i - 1]
-                    ordered_cols.append(f"Var% {year[-2:]}-{prev[-2:]}")
-            
-            df_pivot["Total"] = df_pivot[year_cols_ano].sum(axis=1)
-            ordered_cols.append("Total")
-
-            df_pivot = df_pivot[[c for c in ordered_cols if c in df_pivot.columns]]
-            
-            # Identifica colunas % Total e Var% dinamicamente
-            var_pct_cols = [c for c in df_pivot.columns if c.startswith("% Total") or c.startswith("Var%")]
-
-            # --- Nova Linha de Total ---
-            total_row = {"URG": "TOTAL"}
-            for c in df_pivot.columns:
-                if c != "URG" and c not in var_pct_cols:
-                    total_row[c] = df_pivot[c].sum()
-                elif c in var_pct_cols:
-                    total_row[c] = pd.NA
-                    
-            df_pivot = pd.concat([df_pivot, pd.DataFrame([total_row])], ignore_index=True)
-
-            # Ordena por numeral romano da URG (I → II → III → ...)
-            df_pivot["_order"] = df_pivot["URG"].map(lambda x: 9999 if x == "TOTAL" else _urg_sort_key(x))
-            df_pivot = df_pivot.sort_values("_order").drop(columns="_order").reset_index(drop=True)
-
-            # Salva o dataframe para o callback
-            st.session_state["last_df_pivot_medico"] = df_pivot
-
-            # Conversão das colunas para MultiIndex (Super-Header por Ano)
-            new_cols = []
-            for c in df_pivot.columns:
-                if c == "URG":
-                    new_cols.append(("URG", ""))
-                elif c == "Total":
-                    new_cols.append(("Total Geral", ""))
-                elif c in year_cols_ano:
-                    new_cols.append((c, "Qtd"))
-                elif str(c).startswith("% Total"):
-                    y_str = str(c).split(" ")[-1]
-                    new_cols.append((f"20{y_str}", c))
-                elif str(c).startswith("Var%"):
-                    y_str = str(c).split(" ")[1].split("-")[0]
-                    new_cols.append((f"20{y_str}", c.replace("-", "/")))
-            df_pivot_display = df_pivot.copy()
-            df_pivot_display.columns = pd.MultiIndex.from_tuples(new_cols)
-
-            # Estilização adaptativa ao tema
-            style_fn_medico = build_row_style_fn("URG", st.session_state.get("global_urgs", []))
-            hover_styles_medico = get_table_hover_styles()
-
-            # Sincronização de Checkboxes (Paridade Sidebar -> Tabela)
-            current_urgs = st.session_state.get("global_urgs", [])
-            try:
-                urg_col_values = df_pivot["URG"].tolist()
-                target_indices = [i for i, val in enumerate(urg_col_values) if val in current_urgs]
-                
-                current_sel_obj = st.session_state.get("urg_table_selection_medico", {})
-                current_table_selection = current_sel_obj.get("selection", {}).get("rows", [])
-                
-                if set(target_indices) != set(current_table_selection):
-                    if st.session_state.get("last_interaction_source") != "table":
-                        st.session_state["urg_table_selection_medico"] = {"selection": {"rows": target_indices, "columns": []}}
-            except Exception: pass
-
-            def _fmt_br(v):
-                try:
-                    f = float(v)
-                    if pd.isna(f) or f == 0:
-                        return ""
-                    return f"{int(f):,}".replace(",", ".")
-                except (ValueError, TypeError):
-                    return ""
-
-            def _fmt_pct(v):
-                try:
-                    f = float(v)
-                    if pd.isna(f) or f == 0:
-                        return ""
-                    return f"{f:.2f}%"
-                except (ValueError, TypeError):
-                    return ""
-
-            fmt_br_dict = {c: _fmt_br for c in new_cols if c[1] == "Qtd" or c[0] == "Total Geral"}
-            fmt_pct_dict = {c: _fmt_pct for c in new_cols if c[1].startswith("% Total") or c[1].startswith("Var%")}
-
-            styled_pivot = (
-                df_pivot_display.style
-                .apply(style_fn_medico, axis=1)
-                .set_properties(**{"text-align": "right"}, subset=[c for c in new_cols if c[0] != "URG"])
-                .set_properties(**{"text-align": "left", "font-weight": "600"}, subset=[("URG", "")])
-                .set_table_styles(hover_styles_medico)
-                .format(fmt_br_dict, na_rep="")
-                .format(fmt_pct_dict, na_rep="")
-                .hide(axis="index")
-            )
-            
-            # Renderização da Tabela com Múltipla Seleção (Usando Styler para visual premium)
-            with st.container():
-                st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
-                st.dataframe(
-                    styled_pivot, 
-                    width="stretch", 
-                    hide_index=True,
-                    on_select=sync_urg_table_to_global_medico,
-                    selection_mode="multi-row",
-                    key="urg_table_selection_medico"
-                )
-                st.markdown('</div>', unsafe_allow_html=True)
-        else:
-            st.info("Não há dados suficientes para montar o comparativo por URG.")
+        st.info("Dados insuficientes para gerar a tabela de performance por URG.")
 
     st.markdown("---")
     # --- PRIORIDADE 3: DETALHAMENTO TOP POR URG (ESCOLAS E ATENDIMENTOS) ---
     
-    # Callback para sincronizar seleção da tabela de escolas com a sidebar
-    def sync_escola_table_to_sidebar_medico():
-        if "escola_table_selection_medico" in st.session_state:
-            selection = st.session_state["escola_table_selection_medico"]
-            rows = selection.get("selection", {}).get("rows", [])
-            df_table = st.session_state.get("last_df_cmp_escola_medico")
-            
-            if df_table is not None:
-                selected_escolas = []
-                for r in rows:
-                    try:
-                        # O DataFrame retornado por build_comparativo_anual tem MultiIndex
-                        # A primeira coluna é a categoria (Escola)
-                        val = df_table.data.iloc[r][("Escola", "")]
-                        if val and val != "TOTAL":
-                            selected_escolas.append(val)
-                    except: continue
-                
-                st.session_state["sidebar_escola_filter"] = selected_escolas
-
-    current_selected_escolas = selections.get("escola", [])
     df_cmp_escola = render_top_por_urg(
-        df_filt_no_escola, 
+        df_filt_no_escola[df_filt_no_escola["Ano"].isin(selected_years_comp)] if not df_filt_no_escola.empty else pd.DataFrame(),
         "Quantidade", 
         "Principais Escolas por URG", 
         "Escola", 
         table_key="escola_table_selection_medico",
-        active_row_value=current_selected_escolas,
-        on_select=sync_escola_table_to_sidebar_medico,
-        selection_mode="multi-row"
+        active_row_value=st.session_state.get("sidebar_escola_filter", []),
+        selection_mode="multiple"
     )
-    st.session_state["last_df_cmp_escola_medico"] = df_cmp_escola
 
-    # Sincronização de Checkboxes (Paridade Sidebar -> Tabela)
-    if df_cmp_escola is not None:
-        try:
-            escola_col_values = df_cmp_escola.data[("Escola", "")].tolist()
-            target_indices = [i for i, val in enumerate(escola_col_values) if val in current_selected_escolas]
-            
-            current_table_selection = st.session_state.get("escola_table_selection_medico", {}).get("selection", {}).get("rows", [])
-            if set(target_indices) != set(current_table_selection):
-                st.session_state["escola_table_selection_medico"] = {"selection": {"rows": target_indices, "columns": []}}
-        except Exception: pass
-    render_top_por_urg(
-        df_filt_no_atend, 
-        "Quantidade", 
-        "Principais Atendimentos por URG", 
-        "Atendimento"
-    )
+    escolas_tabela_atual = st.session_state.get("escola_table_selection_medico__selected_values", [])
+    current_sidebar_escolas = st.session_state.get("sidebar_escola_filter", [])
+    last_source = st.session_state.get("last_interaction_source", "")
+    if last_source != "sidebar" and set(map(str, escolas_tabela_atual)) != set(map(str, current_sidebar_escolas)):
+        st.session_state["pending_sidebar_escola_filter"] = escolas_tabela_atual
+        st.session_state["last_interaction_source"] = "table"
+        st.rerun()
+    elif last_source == "sidebar":
+        st.session_state["last_interaction_source"] = ""
+
 
     st.markdown("---")
     # ── Distribuição por URG ──────────────────────────────────────────────────
@@ -573,183 +650,13 @@ def page_medico():
             yaxis_title="Total de Atendimentos",
             hovermode="x unified"
         )
-        st.plotly_chart(fig_urg, width="stretch")
+        st.plotly_chart(fig_urg, use_container_width=True)
 
-    # ── Painel de Cobertura e Atendimento por URG ───────────────────────────────────────────────────
-    st.subheader("Painel de Cobertura e Atendimento por URG")
-    df_home_perf = datasets["home"]["df"].copy()
-    if not df_home_perf.empty and "QtdAlunoEscola" in df_home_perf.columns:
-        if selected_years_comp and "Ano" in df_home_perf.columns:
-            df_home_perf = df_home_perf[df_home_perf["Ano"].astype(str).isin(map(str, selected_years_comp))]
-        if urgs_aplicadas and "URG" in df_home_perf.columns:
-            df_home_perf = df_home_perf[df_home_perf["URG"].isin(urgs_aplicadas)]
-        
-        _escolas_sel = selections.get("escola", [])
-        if _escolas_sel and "Escola" in df_home_perf.columns:
-            df_home_perf = df_home_perf[df_home_perf["Escola"].isin(_escolas_sel)]
-            
-        df_home_perf["QtdAlunoEscola"] = pd.to_numeric(df_home_perf["QtdAlunoEscola"], errors="coerce").fillna(0)
-        
-        if "Ano" in df_home_perf.columns:
-            alunos_ano = df_home_perf.groupby(["URG", "Ano"])["QtdAlunoEscola"].sum().reset_index()
-        else:
-            alunos_ano = df_home_perf.groupby("URG")["QtdAlunoEscola"].sum().reset_index()
-            alunos_ano["Ano"] = "Geral"
-    else:
-        alunos_ano = pd.DataFrame(columns=["URG", "Ano", "QtdAlunoEscola"])
 
-    if not df_filt.empty and "URG" in df_filt.columns and "Ano" in df_filt.columns:
-        atendimentos_ano = df_filt.groupby(["URG", "Ano"])["Quantidade"].sum().reset_index()
-        
-        # Merge atendimentos and alunos
-        df_perf_ano = atendimentos_ano.merge(alunos_ano, on=["URG", "Ano"], how="left").fillna(0)
-        
-        anos_presentes = sorted(df_perf_ano["Ano"].astype(str).unique())
-        df_pivot_perf = pd.DataFrame({"URG": df_perf_ano["URG"].unique()})
-        
-        for y in anos_presentes:
-            df_y = df_perf_ano[df_perf_ano["Ano"].astype(str) == y]
-            df_pivot_perf = df_pivot_perf.merge(df_y[["URG", "Quantidade", "QtdAlunoEscola"]], on="URG", how="left").fillna(0)
-            
-            df_pivot_perf = df_pivot_perf.rename(columns={
-                "Quantidade": f"Atend_Abs_{y}",
-                "QtdAlunoEscola": f"Alunos_Abs_{y}"
-            })
-            
-            soma_atend = df_pivot_perf[f"Atend_Abs_{y}"].sum()
-            df_pivot_perf[f"%_Total_Geral_{y}"] = (df_pivot_perf[f"Atend_Abs_{y}"] / soma_atend * 100) if soma_atend > 0 else 0
-            df_pivot_perf[f"%_Cobertura_{y}"] = (df_pivot_perf[f"Atend_Abs_{y}"] / df_pivot_perf[f"Alunos_Abs_{y}"].replace(0, float("nan")) * 100)
-            
-        ordered_cols = ["URG"]
-        for y in anos_presentes:
-            ordered_cols.extend([f"Atend_Abs_{y}", f"%_Total_Geral_{y}", f"Alunos_Abs_{y}", f"%_Cobertura_{y}"])
-            
-        df_pivot_perf = df_pivot_perf[ordered_cols]
-        
-        # Linha TOTAL
-        total_row = {"URG": "TOTAL"}
-        for y in anos_presentes:
-            total_row[f"Atend_Abs_{y}"] = df_pivot_perf[f"Atend_Abs_{y}"].sum()
-            total_row[f"Alunos_Abs_{y}"] = df_pivot_perf[f"Alunos_Abs_{y}"].sum()
-            total_row[f"%_Total_Geral_{y}"] = pd.NA
-            total_row[f"%_Cobertura_{y}"] = pd.NA
-            
-        df_pivot_perf = pd.concat([df_pivot_perf, pd.DataFrame([total_row])], ignore_index=True)
-        
-        df_pivot_perf["_order"] = df_pivot_perf["URG"].map(lambda x: 9999 if x == "TOTAL" else _urg_sort_key(x))
-        df_pivot_perf = df_pivot_perf.sort_values("_order").drop(columns="_order").reset_index(drop=True)
-        
-        new_cols_perf = []
-        for c in df_pivot_perf.columns:
-            if c == "URG":
-                new_cols_perf.append(("URG", ""))
-            else:
-                parts = c.split("_")
-                y = parts[-1]
-                metric = "_".join(parts[:-1])
-                if metric == "Atend_Abs":
-                    new_cols_perf.append((y, "Total de Atendimentos"))
-                elif metric == "%_Total_Geral":
-                    new_cols_perf.append((y, "% do Total Geral"))
-                elif metric == "Alunos_Abs":
-                    new_cols_perf.append((y, "Total de Alunos"))
-                elif metric == "%_Cobertura":
-                    new_cols_perf.append((y, "% Cobertura"))
-                    
-        def _fmt_br_perf(v):
-            try:
-                f = float(v)
-                if pd.isna(f) or f == 0:
-                    return ""
-                return f"{int(f):,}".replace(",", ".")
-            except (ValueError, TypeError):
-                return ""
-
-        def _fmt_pct_perf(v):
-            try:
-                f = float(v)
-                if pd.isna(f) or f == 0:
-                    return ""
-                return f"{f:.2f}%"
-            except (ValueError, TypeError):
-                return ""
-
-        # Mapeia diretamente no DataFrame para impedir que o Streamlit sobrescreva com floats
-        for c in df_pivot_perf.columns:
-            if c == "URG" or c == "_order":
-                continue
-            if "Atend_Abs_" in c or "Alunos_Abs_" in c:
-                df_pivot_perf[c] = df_pivot_perf[c].map(_fmt_br_perf)
-            elif "%_Total_Geral_" in c or "%_Cobertura_" in c:
-                df_pivot_perf[c] = df_pivot_perf[c].map(_fmt_pct_perf)
-
-        df_pivot_perf.columns = pd.MultiIndex.from_tuples(new_cols_perf)
-
-        # Estilização adaptativa ao tema
-        style_fn_perf = build_row_style_fn("URG", st.session_state.get("global_urgs", []))
-        hover_styles_perf = get_table_hover_styles()
-
-        styled_perf = (
-            df_pivot_perf.style
-            .apply(style_fn_perf, axis=1)
-            .set_properties(**{"text-align": "right"}, subset=[c for c in new_cols_perf if c[0] != "URG"])
-            .set_properties(**{"text-align": "left", "font-weight": "600"}, subset=[("URG", "")])
-            .set_table_styles(hover_styles_perf)
-            .hide(axis="index")
-        )
-        # Callback para sincronizar seleção do Painel de Cobertura
-        def sync_perf_table_to_global_medico():
-            if "perf_table_selection_medico" in st.session_state:
-                selection = st.session_state["perf_table_selection_medico"]
-                rows = selection.get("selection", {}).get("rows", [])
-                df_table = st.session_state.get("last_df_pivot_perf_medico")
-                
-                if df_table is not None:
-                    selected_urgs = []
-                    for r in rows:
-                        try:
-                            urg_val = df_table.iloc[r]["URG"]
-                            if urg_val and urg_val != "TOTAL":
-                                selected_urgs.append(urg_val)
-                        except: continue
-                    
-                    st.session_state["global_urgs"] = selected_urgs
-                    st.session_state["sidebar_urg_filter"] = selected_urgs
-                    st.session_state["last_interaction_source"] = "table_perf"
-
-        # Sincroniza a seleção inicial (Paridade Sidebar -> Tabela)
-        current_urgs_perf = st.session_state.get("global_urgs", [])
-        try:
-            urg_col_perf = df_pivot_perf["URG"].tolist()
-            target_indices_perf = [i for i, val in enumerate(urg_col_perf) if val in current_urgs_perf]
-            
-            current_sel_perf_obj = st.session_state.get("perf_table_selection_medico", {})
-            current_perf_table_selection = current_sel_perf_obj.get("selection", {}).get("rows", [])
-            
-            if set(target_indices_perf) != set(current_perf_table_selection):
-                if st.session_state.get("last_interaction_source") != "table_perf":
-                    st.session_state["perf_table_selection_medico"] = {"selection": {"rows": target_indices_perf, "columns": []}}
-        except: pass
-
-        st.session_state["last_df_pivot_perf_medico"] = df_pivot_perf
-
-        with st.container():
-            st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
-            st.dataframe(
-                styled_perf, 
-                width="stretch", 
-                hide_index=True,
-                on_select=sync_perf_table_to_global_medico,
-                selection_mode="multi-row",
-                key="perf_table_selection_medico"
-            )
-            st.markdown('</div>', unsafe_allow_html=True)
-    else:
-        st.info("Nenhum dado de URG disponível para o cálculo de performance anual.")
 
 
     st.markdown("---")
-    st.subheader("Detalhamento por Aluno (MédicoAluno)")
+    st.subheader("Detalhamento por Aluno")
     if df_aluno.empty:
         st.info(
             "Dados de alunos não estão disponíveis ou houve erro na leitura do CSV."
@@ -871,45 +778,39 @@ def page_medico():
                 # Substituir NaN nos campos de texto por string vazia
                 df_aluno_final = df_aluno_final.fillna("")
                 
+                # Renomear coluna Menu para Perfil para exibição
+                df_aluno_final = df_aluno_final.rename(columns={"Menu": "Perfil"})
+                preview_limit = 500
+                df_aluno_head = df_aluno_final.head(preview_limit).reset_index(drop=True)
+
+                # Aplicar design padrão (Zebra, Hover, etc)
+                styled_aluno = (
+                    df_aluno_head.style.pipe(apply_saedas_design, categoria_col="Aluno")
+                    .set_properties(**{"text-align": "left"})
+                    .hide(axis="index")
+                )
+
+                with st.container(key="medico_aluno_actions_toolbar"):
+                    render_table_toolbar(df_aluno_head, "detalhes_alunos_medico.csv", "aluno_table_medico")
+
+                st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
+                st.dataframe(
+                    styled_aluno,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config={
+                        "Perfil": st.column_config.LinkColumn(
+                            "Perfil", display_text="📄 Ver Perfil"
+                        )
+                    },
+                )
+                st.markdown("</div>", unsafe_allow_html=True)
             else:
-                df_aluno_final = pd.DataFrame()
-
-            preview_limit = 500
-            df_aluno_head = df_aluno_final.head(preview_limit).reset_index(drop=True)
-
-            style_fn_aluno = build_row_style_fn("Aluno")
-            hover_styles_aluno = get_table_hover_styles()
-
-            styled_aluno = (
-                df_aluno_head.style
-                .apply(style_fn_aluno, axis=1)
-                .set_properties(**{"text-align": "left"})
-                .set_table_styles(hover_styles_aluno)
-                .hide(axis="index")
-            )
-
-            st.dataframe(
-                styled_aluno,
-                width="stretch",
-                hide_index=True,
-                column_config={
-                    "Menu": st.column_config.LinkColumn(
-                        "Menu", display_text="Perfil"
-                    )
-                },
-            )
+                st.info("Nenhum registro detalhado para exibir.")
             if total_registros_aluno > preview_limit:
                 st.info(
                     f"Exibindo apenas as primeiras {preview_limit} linhas de {total_registros_aluno}."
                 )
-
-            csv_aluno = df_aluno_filtrado.to_csv(index=False, sep=";").encode("utf-8")
-            st.download_button(
-                label="Exportar CSV (Médico por aluno)",
-                data=csv_aluno,
-                file_name="dados_filtrados_medico_aluno.csv",
-                mime="text/csv",
-            )
 
     st.markdown(" ")
     footer_personal()

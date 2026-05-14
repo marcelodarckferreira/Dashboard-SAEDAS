@@ -7,7 +7,7 @@ from PIL import Image
 import streamlit as st
 from streamlit_option_menu import option_menu
 
-# Ajusta caminho/namespace para permitir imports relativos mesmo executando com streamlit run app.py
+# Ajusta caminho/namespace para permitir imports relativos mesmo executando com streamlit run main.py
 if __package__ is None or __package__ == "":
     ROOT_DIR = Path(__file__).resolve().parent.parent
     if str(ROOT_DIR) not in sys.path:
@@ -20,6 +20,10 @@ from .app_pages.consulta import page_consulta
 from .app_pages.exame import page_exame
 from .app_pages.vacinacao import page_vacinacao
 from .app_pages.nutricao import page_nutricao
+from .app_pages.enfermagem import page_enfermagem
+from .app_pages.psicologo import page_psicologo
+from .app_pages.assistencia_social import page_assistencia_social
+from .app_pages.professor import page_professor
 from .app_pages.medico import page_medico
 from .app_pages.aluno import page_aluno
 from .utils.state_manager import init_global_state
@@ -45,7 +49,7 @@ apply_global_css()
 
 # --- Tratamento de Parâmetros de URL (Deep-linking) ---
 params = st.query_params
-menu_options_all = ["Início", "Encaminhamentos", "Exames", "Vacinação", "Nutrição", "Médico", "Aluno"]
+menu_options_all = ["Início", "Encaminhamentos", "Exames", "Vacinação", "Nutrição", "Enfermagem", "Assistente Social", "Psicólogo", "Professor", "Médico", "Aluno"]
 
 # 1. Verifica se há um parâmetro de menu na URL
 menu_param = params.get("menu")
@@ -122,6 +126,10 @@ with st.sidebar:
         "Exames",
         "Vacinação",
         "Nutrição",
+        "Enfermagem",
+        "Assistente Social",
+        "Psicólogo",
+        "Professor",
         "Médico",
         "Aluno",
     ]
@@ -139,6 +147,10 @@ with st.sidebar:
             "file-medical",
             "shield-plus",
             "egg-fried",
+            "bandaid",
+            "people",
+            "person-heart",
+            "mortarboard",
             "heart-pulse",
             "person",
         ],
@@ -161,9 +173,17 @@ elif menu_escolhido == "Vacinação":
     page_vacinacao()
 elif menu_escolhido == "Nutrição":
     page_nutricao()
+elif menu_escolhido == "Enfermagem":
+    page_enfermagem()
+elif menu_escolhido == "Assistente Social":
+    page_assistencia_social()
+elif menu_escolhido == "Psicólogo":
+    page_psicologo()
+elif menu_escolhido == "Professor":
+    page_professor()
 elif menu_escolhido == "Médico":
     page_medico()
 elif menu_escolhido == "Aluno":
     page_aluno()
 
-# streamlit run app.py
+# streamlit run main.py

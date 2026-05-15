@@ -26,11 +26,18 @@ from app.utils.page_helpers import (
     render_table_toolbar,
     render_saedas_aggrid,
 )
-from app.utils.state_manager import init_global_state, sync_home_to_sidebar, sync_home_urg_to_sidebar
+from app.utils.state_manager import (
+    apply_pending_table_filters,
+    init_global_state,
+    sync_sidebar_escola_selection,
+    sync_home_to_sidebar,
+    sync_home_urg_to_sidebar,
+)
 from app.utils.schemas import (
     SCHEMA_NUTRICAO,
     SCHEMA_NUTRICAO_ALUNO,
     SCHEMA_NUTRICAO_ANO,
+    SCHEMA_HOME,
 )
 from app.utils.styles import apply_global_css, render_metric_cards, apply_saedas_design, build_row_style_fn, get_table_hover_styles
 
@@ -47,10 +54,14 @@ def carregar_dados_nutricao():
     csv_file_ano = "data/DashboardNutricaoAno.csv"
     df_ano, info_ano = load_csv(csv_file_ano, expected_cols=SCHEMA_NUTRICAO_ANO)
 
+    csv_file_home = "data/DashboardHome.csv"
+    df_home, info_home = load_csv(csv_file_home, expected_cols=SCHEMA_HOME)
+
     return {
         "principal": {"df": df, "info": info, "csv": csv_file},
         "aluno": {"df": df_aluno_raw, "info": info_aluno, "csv": csv_file_aluno},
         "ano": {"df": df_ano, "info": info_ano, "csv": csv_file_ano},
+        "home": {"df": df_home, "info": info_home, "csv": csv_file_home},
     }
 
 
@@ -72,60 +83,7 @@ def page_nutricao():
     st.markdown(
         """
         <style>
-            /* Container Principal - Ajuste de Espaçamento Vertical */
-            .st-key-massive_year_selector {
-                margin-top: -1.5rem !important;
-                margin-bottom: 1rem !important;
-            }
-
-            /* Alvo em QUALQUER botão dentro do container do seletor */
-            .st-key-massive_year_selector button {
-                height: 56px !important;
-                min-width: 120px !important;
-                border-radius: 0 !important;
-                background-color: #1e293b !important;
-                border: 1px solid #334155 !important;
-                border-right: none !important;
-                transition: all 0.3s ease !important;
-                margin: 0 !important;
-            }
-
-            /* Arredondamento apenas nas extremidades do GRUPO */
-            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:first-of-type button,
-            .st-key-massive_year_selector button:first-of-type {
-                border-radius: 10px 0 0 10px !important;
-            }
-
-            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:last-of-type button,
-            .st-key-massive_year_selector button:last-of-type {
-                border-radius: 0 10px 10px 0 !important;
-                border-right: 1px solid #334155 !important;
-            }
-
-            /* Alvo em QUALQUER parágrafo ou texto dentro dos botões */
-            .st-key-massive_year_selector button p,
-            .st-key-massive_year_selector button span {
-                font-size: 1.85rem !important;
-                font-weight: 700 !important;
-                color: #f8fafc !important;
-                line-height: 1 !important;
-                margin: 0 !important;
-                padding: 0 !important;
-            }
-
-            /* Estado Ativo */
-            .st-key-massive_year_selector button[data-testid*="Active"],
-            .st-key-massive_year_selector button[aria-pressed="true"] {
-                background-color: #3b82f6 !important;
-                border-color: #60a5fa !important;
-                box-shadow: none !important;
-            }
-
-            .st-key-massive_year_selector button[data-testid*="Active"] p,
-            .st-key-massive_year_selector button[aria-pressed="true"] p {
-                color: #ffffff !important;
-            }
-            /* Rótulos e valores dos cards */
+/* Rótulos e valores dos cards */
             .home-metric-label {
                 font-size: 0.78rem !important;
                 font-weight: 700 !important;
@@ -292,6 +250,7 @@ def page_nutricao():
     df_aluno_raw, info_aluno = datasets["aluno"]["df"], datasets["aluno"]["info"]
     csv_file_ano = datasets["ano"]["csv"]
     df_ano, info_ano = datasets["ano"]["df"], datasets["ano"]["info"]
+    df_home, info_home = datasets["home"]["df"], datasets["home"]["info"]
 
     if info_aluno["erros"]:
         st.warning(
@@ -312,6 +271,10 @@ def page_nutricao():
         return
     if info["alertas"]:
         st.warning("; ".join(info["alertas"]))
+
+    if info_home["erros"]:
+        st.error(f"Erro ao carregar dados demográficos: {'; '.join(info_home['erros'])}")
+        df_home = pd.DataFrame()
 
     df = df.rename(
         columns={
@@ -339,25 +302,14 @@ def page_nutricao():
 
     st.sidebar.title("Filtros - Nutrição")
 
-    # Resolve filtros pendentes oriundos de seleções nas tabelas AgGrid
-    pending_table_urgs = st.session_state.pop("pending_sidebar_urg_filter", None)
-    if pending_table_urgs is not None:
-        st.session_state["sidebar_urg_filter"] = pending_table_urgs
-    pending_table_escolas = st.session_state.pop("pending_sidebar_escola_filter", None)
-    if pending_table_escolas is not None:
-        st.session_state["sidebar_escola_filter"] = pending_table_escolas
+    apply_pending_table_filters()
 
     df_filt_sidebar, selections = sidebar_filters(
         df,
         {"ano": True, "urg": True, "escola": True, "tipo": True},
     )
 
-    current_sidebar_escolas = list(st.session_state.get("sidebar_escola_filter", []))
-    prev_sidebar_escolas = list(st.session_state.get("_prev_sidebar_escola_filter", []))
-    if set(map(str, current_sidebar_escolas)) != set(map(str, prev_sidebar_escolas)):
-        st.session_state["last_interaction_source"] = "sidebar"
-        st.session_state["escola_table_selection_nutricao__selected_values"] = current_sidebar_escolas
-    st.session_state["_prev_sidebar_escola_filter"] = current_sidebar_escolas
+    sync_sidebar_escola_selection("escola_table_selection_nutricao")
 
     render_section_divider()
     st.markdown(" ")
@@ -420,8 +372,8 @@ def page_nutricao():
 
     nutricao_col = "Nutricao"
     nutricoes_disponiveis = (
-        sorted(df_filt_sidebar[nutricao_col].dropna().unique())
-        if nutricao_col in df_filt_sidebar.columns
+        sorted(df[nutricao_col].dropna().unique())
+        if nutricao_col in df.columns
         else []
     )
     
@@ -530,8 +482,22 @@ def page_nutricao():
     )
     
     # 1. Indicador principal (Total Geral)
-    total_qtd = df_filt["Quantidade"].sum() if not df_filt.empty else 0
-    render_metric_cards([{"label": "TOTAL DE REGISTROS DE NUTRIÇÃO", "value": total_qtd}])
+    # --- Cálculo de Métricas Demográficas (Vindas da Home) ---
+    df_home_filt = filter_by_sidebar_selections(df_home, selections)
+    if not df_home_filt.empty:
+        total_alunos_escola = df_home_filt["QtdAlunoEscola"].sum()
+        total_alunos_atendidos = df_home_filt["QtdAluno"].sum()
+    else:
+        total_alunos_escola = 0
+        total_alunos_atendidos = 0
+
+    # Total de registros deve ignorar o filtro de Situação Nutricional para ser um indicador geral
+    total_qtd = df_master_no_nut["Quantidade"].sum() if not df_master_no_nut.empty else 0
+    render_metric_cards([
+        {"label": "TOTAL DE ALUNOS", "value": total_alunos_escola},
+        {"label": "ALUNOS ATENDIDOS", "value": total_alunos_atendidos},
+        {"label": "TOTAL DE REGISTROS DE NUTRIÇÃO", "value": total_qtd}
+    ])
 
     # Sumário por Situação Nutricional - IMUNIDADE AO FILTRO DE NUTRIÇÃO
     nutricao_sum = (
@@ -568,11 +534,11 @@ def page_nutricao():
     st.subheader("Performance por URG")
     st.caption("Nota: Clique em qualquer linha de URG para filtrar o restante do dashboard. Esta tabela é sensível apenas ao filtro de Ano.")
 
-    # Prepara DF para a tabela (Ignora filtros de URG, Escola e Nutrição - Sensível APENAS ao Ano)
-    df_for_urg_table = df.copy()
-    if selected_years_comp:
-        df_for_urg_table = df_for_urg_table[df_for_urg_table["Ano"].isin(selected_years_comp)]
-
+    # Tabela mestre de URG: imune aos filtros de URG e Escola que ela coordena.
+    df_for_urg_table = df_base_sem_escola.copy()
+    if nutricoes_selecionadas:
+        df_for_urg_table = df_for_urg_table[df_for_urg_table["Nutricao"].isin(nutricoes_selecionadas)]
+    
     current_selected_urgs = st.session_state.get("global_urgs", [])
     df_cmp_urg = build_comparativo_anual(df_for_urg_table, "URG", active_row_value=current_selected_urgs)
 
@@ -580,10 +546,6 @@ def page_nutricao():
         df_cmp_urg_aggrid, column_defs, column_map = prepare_comparativo_aggrid_data(df_cmp_urg)
         df_cmp_urg_body, footer_rows = split_aggrid_footer(df_cmp_urg_aggrid)
         urg_field = next((f for f, col in column_map.items() if col == "URG" or col == ("URG", "")), None)
-
-        pre_selected_rows = []
-        if urg_field and current_selected_urgs:
-            pre_selected_rows = [idx for idx, val in enumerate(df_cmp_urg_body[urg_field].tolist()) if val in current_selected_urgs]
 
         selected_urgs_js = json.dumps(list(map(str, current_selected_urgs)))
         urg_field_js = json.dumps(urg_field)
@@ -606,33 +568,46 @@ def page_nutricao():
             "rowMultiSelectWithClick": True,
             "pinnedBottomRowData": footer_rows,
             "onFirstDataRendered": sync_selection_js,
-            "onRowDataUpdated": sync_selection_js,
         }
-        if pre_selected_rows:
-            grid_options_urg["initialState"] = {"rowSelection": pre_selected_rows}
 
         df_cmp_urg_export = pd.concat([df_cmp_urg_body, pd.DataFrame(footer_rows)], ignore_index=True) if footer_rows else df_cmp_urg_body.copy()
         with st.container(key="nutricao_urg_actions_toolbar"):
             render_table_toolbar(df_cmp_urg_export, "performance_urg_nutricao.csv", "urg_table_nutricao")
 
+        _urg_key_sel = "_".join(sorted(map(str, current_selected_urgs))) if current_selected_urgs else "none"
+        urg_table_key = f"urg_table_nutricao_{_urg_key_sel}"
+        _urg_key_changed = st.session_state.get("_prev_urg_table_key_nutricao") != urg_table_key
+        st.session_state["_prev_urg_table_key_nutricao"] = urg_table_key
         st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
         aggrid_response = render_saedas_aggrid(
             df_cmp_urg_body,
             grid_options=grid_options_urg,
-            key=f"urg_table_nutricao_{hash(str(current_selected_urgs))}",
+            key=urg_table_key,
             update_mode=GridUpdateMode.SELECTION_CHANGED,
             incluir_total=bool(footer_rows),
         )
         st.markdown("</div>", unsafe_allow_html=True)
 
-        selected_rows = aggrid_response.get("selected_rows", None)
-        if selected_rows is not None and urg_field:
-            if isinstance(selected_rows, pd.DataFrame):
-                selected_rows = selected_rows.to_dict(orient="records")
-            elif isinstance(selected_rows, dict):
-                selected_rows = [selected_rows]
-            new_selected_urgs = [row.get(urg_field) for row in selected_rows if row.get(urg_field) and row.get(urg_field) != "TOTAL"]
-            if set(new_selected_urgs) != set(current_selected_urgs):
+        # AgGrid pode retornar None quando não há seleção, tratamos como lista vazia []
+        selected_rows_raw = aggrid_response.get("selected_rows")
+        selected_rows = []
+        if selected_rows_raw is not None:
+            if isinstance(selected_rows_raw, pd.DataFrame):
+                selected_rows = selected_rows_raw.to_dict(orient="records")
+            elif isinstance(selected_rows_raw, dict):
+                selected_rows = [selected_rows_raw]
+            else:
+                selected_rows = list(selected_rows_raw)
+
+        if not _urg_key_changed and urg_field:
+            new_selected_urgs = [
+                row.get(urg_field) 
+                for row in selected_rows 
+                if row.get(urg_field) and str(row.get(urg_field)) != "TOTAL"
+            ]
+            
+            # Sincronização Granular: Se houver mudança (inclusive para lista vazia), propaga para a sidebar
+            if set(map(str, new_selected_urgs)) != set(map(str, current_selected_urgs)):
                 st.session_state["global_urgs"] = new_selected_urgs
                 st.session_state["pending_sidebar_urg_filter"] = new_selected_urgs
                 st.session_state["last_interaction_source"] = "table"
@@ -641,8 +616,13 @@ def page_nutricao():
         st.info("Dados insuficientes para gerar a tabela de performance.")
     
     # --- PRIORIDADE 3: DETALHAMENTO TOP POR URG (ESCOLAS E NUTRIÇÃO) ---
+    # Escolas por URG: Deve respeitar o filtro de Situação Nutricional
+    df_for_top_escolas = df_filt_no_escola.copy()
+    if nutricoes_selecionadas:
+        df_for_top_escolas = df_for_top_escolas[df_for_top_escolas["Nutricao"].isin(nutricoes_selecionadas)]
+
     render_top_por_urg(
-        df_filt_no_escola[df_filt_no_escola["Ano"].isin(selected_years_comp)] if not df_filt_no_escola.empty else pd.DataFrame(), 
+        df_for_top_escolas[df_for_top_escolas["Ano"].isin(selected_years_comp)] if not df_for_top_escolas.empty else pd.DataFrame(), 
         "Quantidade", 
         "Principais Escolas por URG", 
         "Escola", 
@@ -653,13 +633,13 @@ def page_nutricao():
 
     escolas_tabela_atual = st.session_state.get("escola_table_selection_nutricao__selected_values", [])
     current_sidebar_escolas = st.session_state.get("sidebar_escola_filter", [])
-    last_source = st.session_state.get("last_interaction_source", "")
-    if last_source != "sidebar" and set(map(str, escolas_tabela_atual)) != set(map(str, current_sidebar_escolas)):
+    
+    # Sincronismo tabela -> sidebar: removida restrição rígida de last_source para permitir limpeza total
+    if set(map(str, escolas_tabela_atual)) != set(map(str, current_sidebar_escolas)):
         st.session_state["pending_sidebar_escola_filter"] = escolas_tabela_atual
-        st.session_state["last_interaction_source"] = "table"
+        st.session_state["last_interaction_source"] = "table_escola"
         st.rerun()
-    elif last_source == "sidebar":
-        st.session_state["last_interaction_source"] = ""
+    st.session_state["last_interaction_source"] = ""
 
 
     st.markdown("---")
@@ -671,7 +651,7 @@ def page_nutricao():
 
     # --- DISTRIBUIÇÃO POR SITUAÇÃO NUTRICIONAL (GRÁFICO AGRUPADO) ---
     st.subheader("Distribuição por Situação Nutricional")
-    render_grouped_bar_anual(df_filt, "Quantidade", "", x_col="Nutricao", orientation="h")
+    render_grouped_bar_anual(df_filt_no_nut, "Quantidade", "", x_col="Nutricao", orientation="h")
     
 
 

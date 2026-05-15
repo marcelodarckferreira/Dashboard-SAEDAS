@@ -40,12 +40,19 @@ def _current_theme_colors() -> dict:
 # ──────────────────────────────────────────────────────────────────
 # Injeção do CSS global
 # ──────────────────────────────────────────────────────────────────
-def apply_global_css(css_path: str = "app/assets/styles.css") -> None:
+def apply_global_css() -> None:
     """Injeta CSS global a partir do arquivo de design system."""
-    path = pathlib.Path(css_path)
-    if not path.exists():
-        return
-    css = path.read_text(encoding="utf-8")
+    # Resolve o caminho de forma robusta, independente de onde o Streamlit é executado
+    current_dir = pathlib.Path(__file__).parent.resolve()
+    css_path = current_dir.parent / "assets" / "styles.css"
+    
+    if not css_path.exists():
+        # Fallback para o caso de a estrutura ser diferente (ex: execução direta na raiz)
+        css_path = pathlib.Path("app/assets/styles.css").resolve()
+        if not css_path.exists():
+            return
+            
+    css = css_path.read_text(encoding="utf-8")
     st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 

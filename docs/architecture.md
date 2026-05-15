@@ -17,28 +17,32 @@ Organização modular, responsabilidades dos módulos e governança de código.
 
 ```text
 app/
-├── app.py                    # Ponto de entrada, roteamento e configuração global
-├── app_pages/                # Uma função page_*() por módulo funcional
-│   ├── home.py               # Visão geral — usa AgGrid para tabela principal
-│   ├── consulta.py           # Encaminhamentos
-│   ├── exame.py              # Exames
-│   ├── vacinacao.py          # Vacinação
-│   ├── nutricao.py           # Nutrição
-│   ├── medico.py             # Atendimentos médicos
-│   └── aluno.py              # Perfil individual do aluno (deep-link)
-├── components/               # Componentes reutilizáveis de UI
-│   ├── sidebar_filters.py    # Filtros configuráveis da sidebar
-│   └── footer_personal.py    # Rodapé fixo da prefeitura
-├── utils/                    # Camada de lógica — nunca importar entre pages diretamente
-│   ├── styles.py             # Motor de design: SAEDAS_PALETTE, apply_saedas_design
-│   ├── page_helpers.py       # Funções de agregação, tabelas e gráficos
-│   ├── state_manager.py      # Sincronização bidirecional e estados globais
-│   ├── data_loader.py        # Carregamento e validação de CSVs
-│   └── schemas.py            # Schemas esperados de cada dataset
-├── data/                     # Datasets CSV (não versionados)
+├── main.py                       # Ponto de entrada, roteamento e configuração global
+├── app_pages/                    # Uma função page_*() por módulo funcional
+│   ├── home.py                   # Visão geral — usa AgGrid para tabela principal
+│   ├── consulta.py               # Encaminhamentos
+│   ├── exame.py                  # Exames
+│   ├── vacinacao.py              # Vacinação
+│   ├── nutricao.py               # Nutrição
+│   ├── enfermagem.py             # Atendimentos de enfermagem
+│   ├── psicologo.py              # Atendimentos de psicologia
+│   ├── assistencia_social.py     # Atendimentos de assistência social
+│   ├── professor.py              # Atendimentos com professor
+│   ├── medico.py                 # Atendimentos médicos
+│   └── aluno.py                  # Perfil individual do aluno (deep-link)
+├── components/                   # Componentes reutilizáveis de UI
+│   ├── sidebar_filters.py        # Filtros configuráveis da sidebar
+│   └── footer_personal.py        # Rodapé fixo da prefeitura
+├── utils/                        # Camada de lógica — nunca importar entre pages diretamente
+│   ├── styles.py                 # Motor de design: SAEDAS_PALETTE, apply_saedas_design
+│   ├── page_helpers.py           # Funções de agregação, tabelas e gráficos
+│   ├── state_manager.py          # Sincronização bidirecional e estados globais
+│   ├── data_loader.py            # Carregamento e validação de CSVs
+│   └── schemas.py                # Schemas esperados de cada dataset
+├── data/                         # Datasets CSV (não versionados)
 └── assets/
-    ├── styles.css            # Design System global (tokens CSS, regras de tabela)
-    ├── logo-pcni.png         # Logo na sidebar
+    ├── styles.css                # Design System global (tokens CSS, regras de tabela)
+    ├── logo-pcni.png             # Logo na sidebar
     └── favicon.ico
 ```
 
@@ -46,7 +50,7 @@ app/
 
 ## 2. Responsabilidades dos Módulos
 
-### `app.py`
+### `main.py`
 
 - Configura `st.set_page_config` (deve ser a primeira chamada Streamlit).
 - Chama `init_global_state()` antes de qualquer renderização.
@@ -73,11 +77,18 @@ app/
 
 ### `utils/page_helpers.py`
 
-- **`build_comparativo_anual(df, categoria_col, value_col, active_row_value)`** — agrega dados por ano e categoria, gera MultiIndex com colunas de Qtd / % Total / Var%, insere linha TOTAL e aplica `apply_saedas_design`. Retorna um Pandas Styler pronto.
+- **`render_saedas_aggrid(df_data, grid_options, key, update_mode, incluir_total, max_rows)`** — função mestra de renderização AgGrid: calcula altura dinâmica, injeta CSS do design system e encapsula configurações padrão. Uso obrigatório para todas as tabelas interativas.
+- **`build_comparativo_anual(df, categoria_col, value_col, active_row_value, denominator_row_label, pct_label)`** — agrega dados por ano e categoria, gera MultiIndex com colunas de Qtd / % Total / Var%, insere linha TOTAL e aplica `apply_saedas_design`. Retorna um Pandas Styler pronto.
+- **`prepare_comparativo_aggrid_data(df_styler, include_selection_column)`** — converte um Styler/MultiIndex em dados flatados e `columnDefs` compatíveis com AgGrid. Retorna `(df_flat, column_defs, column_map)`.
+- **`split_aggrid_footer(df_grid)`** — separa a última linha do DataFrame como `pinnedBottomRowData` para o AgGrid. Retorna `(df_body, footer_rows)`.
+- **`calcular_altura_aggrid(df, limite_linhas, incluir_total, max_rows)`** — calcula altura ideal em pixels para um AgGrid, com teto padrão de 20 linhas.
+- **`render_table_toolbar(df_export, file_name, key_prefix)`** — barra de ferramentas unificada com botões 📋 Copiar (via JS clipboard) e ⬇️ CSV alinhados à direita.
 - **`filter_by_sidebar_selections(df, selections)`** — aplica filtros de ano, URG, escola e tipo a um DataFrame.
-- **`render_grouped_bar_anual(df, value_col, titulo)`** — gráfico de barras agrupadas por ano.
-- **`render_top_por_urg(df, value_col, titulo, label_col)`** — gráfico horizontal para uma única URG selecionada.
-- **`format_filters_applied(selections, df, mapping)`** — string compacta de filtros para breadcrumb.
+- **`render_grouped_bar_anual(df, value_col, titulo, x_col, orientation)`** — gráfico de barras agrupadas por ano (vertical ou horizontal) com paleta de cores fixa por ano.
+- **`render_top_por_urg(df, value_col, titulo, label_col, table_key, active_row_value)`** — gráfico horizontal + tabela comparativa para URG(s) selecionada(s), com suporte a seleção interativa que filtra o dashboard.
+- **`format_filters_applied(selections, df, mapping)`** — string compacta de filtros para breadcrumb/caption.
+- **`prepare_nutricao_aluno_table(df_aluno, build_perfil_link, selected_nuts)`** — prepara tabela pivot por aluno para a página de Nutrição, com múltiplos anos como colunas.
+- **`toggle_multiselect_value(current_selection, value)`** — utilitário para alternar um valor em uma lista de seleção múltipla.
 
 ### Regras de Ordenação de KPI x Tabela ANO
 
@@ -87,7 +98,7 @@ app/
 
 ### `utils/state_manager.py`
 
-- **`init_global_state()`** — inicializa todas as chaves do `session_state` na primeira execução. Deve ser chamada no topo de `app.py` e de cada `page_*()`.
+- **`init_global_state()`** — inicializa todas as chaves do `session_state` na primeira execução. Deve ser chamada no topo de `main.py` e de cada `page_*()`.
 - Funções de callback de sincronização (ver `data_interaction.md`).
 
 ### `utils/data_loader.py`
@@ -145,13 +156,15 @@ app/
 Toda `page_*()` segue este fluxo:
 
 ```text
-1. init_global_state()          → garante chaves no session_state
-2. apply_global_css()           → injeta styles.css
-3. load_csv(path, schema)       → carrega e valida dados
-4. sidebar_filters(df, config)  → filtra df e retorna selections
-5. build_comparativo_anual()    → agrega + estiliza (retorna Styler)
-6. st.dataframe(styled_df)      → renderiza com Pro Footer automático
-7. footer_personal()            → rodapé fixo
+1. init_global_state()                       → garante chaves no session_state
+2. apply_global_css()                        → injeta styles.css
+3. load_csv(path, schema)                    → carrega e valida dados
+4. sidebar_filters(df, config)               → filtra df e retorna selections
+5. build_comparativo_anual()                 → agrega + estiliza (retorna Styler)
+6. prepare_comparativo_aggrid_data()         → converte Styler em flat + columnDefs
+7. split_aggrid_footer()                     → separa linha TOTAL como rodapé fixo
+8. render_table_toolbar() + render_saedas_aggrid() → renderiza com toolbar + AgGrid
+9. footer_personal()                         → rodapé fixo
 ```
 
 ### Tratamento de erro padrão
@@ -172,7 +185,7 @@ if info["alertas"]:
 
 ## 5. Deep-linking (Parâmetros de URL)
 
-O `app.py` suporta navegação direta por URL:
+O `main.py` suporta navegação direta por URL:
 
 | Parâmetro | Exemplo | Efeito |
 | :--- | :--- | :--- |
@@ -189,22 +202,23 @@ Os parâmetros são consumidos e removidos da URL após o processamento para evi
 | :--- | :--- |
 | `streamlit` | Framework principal |
 | `streamlit_option_menu` | Menu lateral com ícones |
-| `st_aggrid` | Tabela avançada na Home (AgGrid) |
+| `st_aggrid` | Tabelas interativas (AgGrid) |
 | `plotly.express` | Gráficos de barras e análises |
 | `pandas` | Manipulação de dados e Styler |
+| `numpy` | Cálculos numéricos e NaN handling |
 | `Pillow` | Carregamento do logo na sidebar |
+
 ---
-+
-+## 7. Governança de Infraestrutura e Dependências
-+
-+### Padrão de Execução
-+
-+- **Docker First:** O ambiente Docker é a referência oficial para comportamento do sistema. Conflitos de bibliotecas de sistema (shared objects, fontes, charset) devem ser resolvidos no `Dockerfile`.
-+- **Isolamento:** O uso de `pip install` local sem venv é estritamente proibido para evitar poluição do ambiente e conflitos globais.
-+
-+### Gestão de Conflitos de Bibliotecas
-+
-+- **Streamlit vs Componentes:** Bibliotecas de terceiros (como `streamlit-aggrid` ou `streamlit-option-menu`) devem ser validadas quanto à compatibilidade com a versão do core do Streamlit antes da atualização do `requirements.txt`.
-+- **Frontend-Backend Parity:** Funcionalidades que dependem de hardware ou SO (como áudio, câmera ou clipboard) devem sempre priorizar APIs de navegador (JS) para garantir que funcionem de forma idêntica dentro de containers Docker headless.
-+- **Verificação de Regressão:** Qualquer mudança no `requirements.txt` exige um rebuild completo da imagem Docker (`docker compose build --no-cache`) para validar que não há conflitos de dependências transitivas.
-+
+
+## 7. Governança de Infraestrutura e Dependências
+
+### Padrão de Execução
+
+- **Docker First:** O ambiente Docker é a referência oficial para comportamento do sistema. Conflitos de bibliotecas de sistema (shared objects, fontes, charset) devem ser resolvidos no `Dockerfile`.
+- **Isolamento:** O uso de `pip install` local sem venv é estritamente proibido para evitar poluição do ambiente e conflitos globais.
+
+### Gestão de Conflitos de Bibliotecas
+
+- **Streamlit vs Componentes:** Bibliotecas de terceiros (como `streamlit-aggrid` ou `streamlit-option-menu`) devem ser validadas quanto à compatibilidade com a versão do core do Streamlit antes da atualização do `requirements.txt`.
+- **Frontend-Backend Parity:** Funcionalidades que dependem de hardware ou SO (como áudio, câmera ou clipboard) devem sempre priorizar APIs de navegador (JS) para garantir que funcionem de forma idêntica dentro de containers Docker headless.
+- **Verificação de Regressão:** Qualquer mudança no `requirements.txt` exige um rebuild completo da imagem Docker (`docker compose build --no-cache`) para validar que não há conflitos de dependências transitivas.

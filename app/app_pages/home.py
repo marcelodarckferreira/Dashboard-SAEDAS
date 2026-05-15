@@ -17,7 +17,11 @@ from app.utils.page_helpers import (
     render_table_toolbar,
     render_saedas_aggrid
 )
-from app.utils.state_manager import init_global_state, sync_home_to_sidebar
+from app.utils.state_manager import (
+    apply_pending_table_filters,
+    init_global_state,
+    sync_home_to_sidebar,
+)
 from app.utils.data_loader import load_csv
 from app.utils.schemas import (
     SCHEMA_HOME,
@@ -89,28 +93,6 @@ def page_home():
                 letter-spacing: -0.02em !important;
             }
 
-            /* 2. Seletor de Ano (Segmented Control) */
-            .st-key-massive_year_selector {
-                margin-top: -1.5rem !important;
-                margin-bottom: 1rem !important;
-            }
-            .st-key-massive_year_selector button {
-                height: 56px !important;
-                min-width: 120px !important;
-                border-radius: 0 !important;
-                background-color: #1e293b !important;
-                border: 1px solid #334155 !important;
-                border-right: none !important;
-                transition: all 0.3s ease !important;
-                margin: 0 !important;
-            }
-            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:first-of-type button {
-                border-radius: 10px 0 0 10px !important;
-            }
-            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:last-of-type button {
-                border-radius: 0 10px 10px 0 !important;
-                border-right: 1px solid #334155 !important;
-            }
 
             /* 3. KPI Cards (Design Premium com Borda Iluminada) */
             .home-metric-card {
@@ -154,112 +136,6 @@ def page_home():
                 color: #f1f5f9 !important;
                 line-height: 1.1 !important;
             }
-
-            /* 4. Barra de Ferramentas AgGrid (Toolbars) */
-            .st-key-home_urg_actions_toolbar div[data-testid="stHorizontalBlock"],
-            .st-key-home_escola_actions_toolbar div[data-testid="stHorizontalBlock"],
-            .st-key-home_ano_actions_toolbar div[data-testid="stHorizontalBlock"],
-            .st-key-home_detail_toolbar div[data-testid="stHorizontalBlock"] {
-                gap: 0 !important;
-                --st-horizontal-block-gap: 0px !important;
-                justify-content: flex-end !important;
-                align-items: center !important;
-                padding-right: 6px !important;
-                overflow: visible !important;
-            }
-            .st-key-home_detail_toolbar div[data-testid="stDownloadButton"] {
-                margin: 0 !important;
-                padding: 0 !important;
-                width: 100% !important;
-            }
-            .st-key-home_urg_actions_toolbar div[data-testid="stColumn"],
-            .st-key-home_escola_actions_toolbar div[data-testid="stColumn"],
-            .st-key-home_ano_actions_toolbar div[data-testid="stColumn"],
-            .st-key-home_detail_toolbar div[data-testid="stColumn"] {
-                padding: 0 !important;
-                margin: 0 !important;
-                width: auto !important;
-                flex: 0 1 auto !important;
-                overflow: visible !important;
-            }
-            .st-key-home_urg_actions_toolbar button,
-            .st-key-home_escola_actions_toolbar button,
-            .st-key-home_ano_actions_toolbar button,
-            .st-key-home_detail_toolbar button,
-            .st-key-home_detail_toolbar div[data-testid="stDownloadButton"] button,
-            .st-key-home_toolbar_column_toggle button,
-            .st-key-home_toolbar_copy button,
-            .st-key-download_csv_home_toolbar button {
-                background: transparent !important;
-                border: 1px solid #334155 !important;
-                box-sizing: border-box !important;
-                border-radius: 0px !important;
-                color: #94a3b8 !important;
-                height: 34px !important;
-                padding: 0 12px !important;
-                font-size: 0.78rem !important;
-                transition: background 0.15s, color 0.15s !important;
-                margin: 0 !important;
-                width: 100% !important;
-                z-index: 1 !important;
-                white-space: nowrap !important;
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                gap: 6px !important;
-                border-right: none !important; /* Evita bordas duplas no meio */
-            }
-            /* O último botão sempre fecha a borda direita */
-            .st-key-home_detail_toolbar div[data-testid="stDownloadButton"] button,
-            .st-key-download_csv_home_toolbar button,
-            div[class*="st-key-download_"] button {
-                border-right: 1px solid #334155 !important;
-            }
-            /* Garantir que o texto interno também não quebre */
-            .st-key-home_urg_actions_toolbar button p,
-            .st-key-home_escola_actions_toolbar button p,
-            .st-key-home_ano_actions_toolbar button p,
-            .st-key-home_detail_toolbar button p,
-            .st-key-home_detail_toolbar div[data-testid="stDownloadButton"] button p,
-            .st-key-home_toolbar_column_toggle button p,
-            .st-key-home_toolbar_copy button p,
-            .st-key-download_csv_home_toolbar button p {
-                white-space: nowrap !important;
-                margin: 0 !important;
-                display: inline-block !important;
-            }
-            .st-key-home_urg_actions_toolbar button:hover,
-            .st-key-home_escola_actions_toolbar button:hover,
-            .st-key-home_ano_actions_toolbar button:hover,
-            .st-key-home_detail_toolbar button:hover,
-            .st-key-home_detail_toolbar div[data-testid="stDownloadButton"] button:hover {
-                z-index: 2 !important; /* Traz para frente no hover para mostrar a borda completa */
-                border-color: #38bdf8 !important;
-                color: #38bdf8 !important;
-            }
-
-            /* Arredondamento Inteligente das Extremidades */
-            /* 1. Primeiro botão de QUALQUER grupo (Home ou Tabelas) */
-            .st-key-home_toolbar_column_toggle button,
-            div[class*="st-key-copy_"] button {
-                border-radius: 6px 0 0 6px !important;
-            }
-
-            /* 2. Botão do Meio (Apenas no grupo de 3 da Home) */
-            .st-key-home_toolbar_copy button {
-                border-radius: 0 !important;
-            }
-
-            /* 3. Último botão de QUALQUER grupo (Home ou Tabelas) */
-            .st-key-home_detail_toolbar div[data-testid="stDownloadButton"] button,
-            .st-key-download_csv_home_toolbar button,
-            div[class*="st-key-download_"] button {
-                border-radius: 0 6px 6px 0 !important;
-                margin-right: 0 !important;
-            }
-
-            /* 4. Caso Especial: Copiar em grupo de 2 (Garantir arredondamento se for o primeiro) */
-            /* Se for o grupo de tabelas, o 'copy_' já é o primeiro e é coberto pela regra 1. */
 
             /* 5. Painel de Configuração de Colunas */
             .home-columns-panel-title { font-size: 0.72rem; font-weight: 700; color: #cbd5e1; text-transform: uppercase; }
@@ -385,81 +261,9 @@ def page_home():
     # --- Filtros na Sidebar ---
     home_filter_config = {"ano": True, "urg": True, "escola": True, "tipo": False}
 
-    pending_table_urgs = st.session_state.pop("pending_sidebar_urg_filter", None)
-    if pending_table_urgs is not None:
-        st.session_state["sidebar_urg_filter"] = pending_table_urgs
-
-    pending_table_escolas = st.session_state.pop(
-        "pending_sidebar_escola_filter", None
-    )
-    if pending_table_escolas is not None:
-        st.session_state["sidebar_escola_filter"] = pending_table_escolas
+    apply_pending_table_filters()
 
     df_filtrado, selections = sidebar_filters(df, home_filter_config)
-    
-    # Injeção Direta de CSS para o Seletor de Ano (Garante aplicação imediata)
-    st.markdown(
-        """
-        <style>
-            /* Container Principal - Ajuste de Espaçamento Vertical */
-            .st-key-massive_year_selector {
-                margin-top: -1.5rem !important; /* Puxa o componente para cima */
-                margin-bottom: 1rem !important;
-            }
-                     
-            /* Alvo em QUALQUER botão dentro do container do seletor */
-            .st-key-massive_year_selector button {
-                height: 56px !important;      /* Reduzido para um tamanho mais equilibrado */
-                min-width: 120px !important;
-                border-radius: 0 !important;  /* Remove arredondamento individual */
-                background-color: #1e293b !important;
-                border: 1px solid #334155 !important;
-                border-right: none !important; /* Remove bordas internas duplicadas */
-                transition: all 0.3s ease !important;
-                margin: 0 !important;
-            }
-            
-            /* Arredondamento apenas nas extremidades do GRUPO */
-            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:first-of-type button,
-            .st-key-massive_year_selector button:first-of-type {
-                border-radius: 10px 0 0 10px !important;
-            }
-            
-            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:last-of-type button,
-            .st-key-massive_year_selector button:last-of-type {
-                border-radius: 0 10px 10px 0 !important;
-                border-right: 1px solid #334155 !important;
-            }
-            
-            /* Alvo em QUALQUER parágrafo ou texto dentro dos botões */
-            .st-key-massive_year_selector button p,
-            .st-key-massive_year_selector button span {
-                font-size: 1.85rem !important; /* Tamanho proporcional e legível */
-                font-weight: 700 !important;
-                color: #f8fafc !important;
-                line-height: 1 !important;
-                margin: 0 !important;
-                padding: 0 !important;
-            }
-            
-            /* Estado Ativo (Sincronizado com o tema do Streamlit) */
-            .st-key-massive_year_selector button[data-testid*="Active"],
-            .st-key-massive_year_selector button[aria-pressed="true"] {
-                background-color: #3b82f6 !important;
-                border-color: #60a5fa !important;
-                box-shadow: none !important; /* Remove o glow para um visual mais limpo */
-            }
-            
-            .st-key-massive_year_selector button[data-testid*="Active"] p,
-            .st-key-massive_year_selector button[aria-pressed="true"] p {
-                color: #ffffff !important;
-            }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
-    
-    
     # --- SELETOR TEMPORAL MESTRE (INDICADORES E PÁGINA) ---
     current_year = datetime.datetime.now().year
     years_options = sorted([current_year - i for i in range(5)], reverse=True)
@@ -803,9 +607,11 @@ def page_home():
                 if c in year_cols_existentes or c == "Total" or c.startswith("Var "):
                     total_row[c] = df_home_ano_exibir[c].sum()
                 elif c.startswith("Var% ") or c.startswith("% Cobertura"):
-                    total_row[c] = pd.NA
+                    total_row[c] = np.nan
             
-            df_home_ano_display = pd.concat([df_home_ano_exibir, pd.DataFrame([total_row])], ignore_index=True)
+            # Cria o DF da linha de total. O Pandas agora lida melhor com np.nan para tipos float.
+            total_row_df = pd.DataFrame([total_row])
+            df_home_ano_display = pd.concat([df_home_ano_exibir, total_row_df], ignore_index=True)
         else:
             df_home_ano_display = df_home_ano_exibir.copy()
 
@@ -921,14 +727,6 @@ def page_home():
             None,
         )
 
-        pre_selected_rows = []
-        if urg_field and current_selected_urgs:
-            pre_selected_rows = [
-                idx
-                for idx, val in enumerate(df_cmp_urg_body[urg_field].tolist())
-                if val in current_selected_urgs
-            ]
-
         grid_options = {
             "columnDefs": column_defs,
             "defaultColDef": {
@@ -947,8 +745,6 @@ def page_home():
             "suppressContextMenu": False,
             "copyHeadersToClipboard": True,
         }
-        if pre_selected_rows:
-            grid_options["initialState"] = {"rowSelection": pre_selected_rows}
 
         selected_urgs_js = json.dumps(list(map(str, current_selected_urgs)))
         urg_field_js = json.dumps(urg_field) if urg_field else "null"
@@ -966,22 +762,17 @@ def page_home():
             """
         )
         grid_options["onFirstDataRendered"] = sync_urg_selection_js
-        grid_options["onRowDataUpdated"] = sync_urg_selection_js
 
-        # Chave estável: só muda quando a sidebar é a fonte da mudança.
-        # Quando a tabela é a fonte, usamos a chave anterior para preservar a seleção do usuário.
-        suppress_urg_key_change = st.session_state.pop("_suppress_urg_key_change", False)
-        new_urg_key_suffix = "|".join(sorted(map(str, current_selected_urgs))) or "all"
-        if suppress_urg_key_change:
-            urg_grid_key = st.session_state.get("_urg_grid_key_cache", f"urg_home_aggrid_{new_urg_key_suffix}")
-        else:
-            urg_grid_key = f"urg_home_aggrid_{new_urg_key_suffix}"
-            st.session_state["_urg_grid_key_cache"] = urg_grid_key
-
-        # Se a sidebar mudou a seleção, a instância da grade acabou de ser recriada.
-        # Nesse ciclo, o payload de selected_rows pode refletir o estado antigo antes do JS
-        # reaplicar a seleção visual; ignoramos para não desfazer a sidebar.
-        urg_key_changed = st.session_state.get("_prev_urg_grid_key") != urg_grid_key
+        # Chave dinâmica: muda quando a seleção muda, forçando re-mount e onFirstDataRendered.
+        # Isso sincroniza sidebar→grid sem usar onRowDataUpdated (que dispara em todo rerun e
+        # causa re-seleção indevida quando o usuário está desselecionando).
+        _urg_key_sel = "_".join(sorted(map(str, current_selected_urgs))) if current_selected_urgs else "none"
+        urg_grid_key = f"urg_home_aggrid_{_urg_key_sel}"
+        
+        # Monitoramos se houve mudança de seleção vinda da sidebar
+        sidebar_urg_filter = st.session_state.get("sidebar_urg_filter", [])
+        urg_key_changed = set(map(str, st.session_state.get("_prev_urg_filter_val") or [])) != set(map(str, sidebar_urg_filter))
+        st.session_state["_prev_urg_filter_val"] = sidebar_urg_filter
         st.session_state["_prev_urg_grid_key"] = urg_grid_key
 
         with st.container():
@@ -1005,27 +796,34 @@ def page_home():
             )
             st.markdown('</div>', unsafe_allow_html=True)
 
-        selected_rows = aggrid_response.get("selected_rows", None)
-        has_grid_selection_payload = selected_rows is not None
-        if has_grid_selection_payload and not urg_key_changed:
-            if isinstance(selected_rows, pd.DataFrame):
-                selected_rows = selected_rows.to_dict(orient="records")
-            elif isinstance(selected_rows, dict):
-                selected_rows = [selected_rows]
+        # AgGrid pode retornar None quando não há seleção, tratamos como lista vazia []
+        selected_rows_raw = aggrid_response.get("selected_rows")
+        selected_rows = []
+        if selected_rows_raw is not None:
+            if isinstance(selected_rows_raw, pd.DataFrame):
+                selected_rows = selected_rows_raw.to_dict(orient="records")
+            elif isinstance(selected_rows_raw, dict):
+                selected_rows = [selected_rows_raw]
+            else:
+                selected_rows = list(selected_rows_raw)
 
+        if not urg_key_changed:
             if urg_field:
                 selected_urgs = [
-                    row.get(urg_field)
+                    str(row.get(urg_field))
                     for row in selected_rows
-                    if row.get(urg_field) and row.get(urg_field) != "TOTAL"
+                    if row.get(urg_field) and str(row.get(urg_field)) != "TOTAL"
                 ]
+                
+                # Normalizamos ambos os sets para string para garantir paridade (especialmente em itens únicos)
+                current_urgs_str_set = set(map(str, current_selected_urgs))
+                new_urgs_str_set = set(selected_urgs)
 
-                if set(selected_urgs) != set(current_selected_urgs):
+                if new_urgs_str_set != current_urgs_str_set:
                     st.session_state["global_urgs"] = selected_urgs
                     st.session_state["pending_sidebar_urg_filter"] = selected_urgs
+                    st.session_state["pending_sidebar_escola_filter"] = []
                     st.session_state["last_interaction_source"] = "table"
-                    # Suprime a mudança de chave no próximo rerun para manter o grid estável
-                    st.session_state["_suppress_urg_key_change"] = True
                     st.rerun()
     else:
         st.info("Dados insuficientes para gerar a tabela comparativa de URGs.")
@@ -1064,14 +862,6 @@ def page_home():
                 None,
             )
 
-            escola_pre_selected_rows = []
-            if escola_field and selected_escolas_sidebar:
-                escola_pre_selected_rows = [
-                    idx
-                    for idx, val in enumerate(df_cmp_escola_body[escola_field].tolist())
-                    if val in selected_escolas_sidebar
-                ]
-
             escola_grid_options = {
                 "columnDefs": escola_column_defs,
                 "defaultColDef": {
@@ -1090,10 +880,6 @@ def page_home():
                 "suppressContextMenu": False,
                 "copyHeadersToClipboard": True,
             }
-            if escola_pre_selected_rows:
-                escola_grid_options["initialState"] = {
-                    "rowSelection": escola_pre_selected_rows
-                }
 
             selected_escolas_js = json.dumps(list(map(str, selected_escolas_sidebar)))
             escola_field_js = json.dumps(escola_field) if escola_field else "null"
@@ -1111,7 +897,6 @@ def page_home():
                 """
             )
             escola_grid_options["onFirstDataRendered"] = sync_escola_selection_js
-            escola_grid_options["onRowDataUpdated"] = sync_escola_selection_js
 
             df_cmp_escola_export = (
                 pd.concat(
@@ -1125,20 +910,14 @@ def page_home():
                 render_table_toolbar(df_cmp_escola_export, "comparativo_escola_home.csv", "home_escola_table")
             st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
 
-            # Chave estável para Escola
-            suppress_escola_key_change = st.session_state.pop("_suppress_escola_key_change", False)
-            new_escola_key_suffix = "|".join(sorted(map(str, selected_escolas_sidebar))) or "all"
-            if suppress_escola_key_change:
-                escola_grid_key = st.session_state.get("_escola_grid_key_cache", f"escola_home_aggrid_{new_escola_key_suffix}")
-            else:
-                escola_grid_key = f"escola_home_aggrid_{new_escola_key_suffix}"
-                st.session_state["_escola_grid_key_cache"] = escola_grid_key
+            # Chave dinâmica: re-monta quando a seleção muda, acionando onFirstDataRendered.
+            _escola_key_sel = "_".join(sorted(map(str, selected_escolas_sidebar))) if selected_escolas_sidebar else "none"
+            escola_grid_key = f"escola_home_aggrid_{_escola_key_sel}"
 
-            # Evita que uma resposta stale da grade recém-renderizada apague a seleção
-            # escolhida na sidebar antes do JS reaplicar os checkboxes.
-            escola_key_changed = (
-                st.session_state.get("_prev_escola_grid_key") != escola_grid_key
-            )
+            # Monitoramos se houve mudança de seleção vinda da sidebar
+            sidebar_escola_val = st.session_state.get("sidebar_escola_filter", [])
+            escola_key_changed = set(map(str, st.session_state.get("_prev_escola_filter_val") or [])) != set(map(str, sidebar_escola_val))
+            st.session_state["_prev_escola_filter_val"] = sidebar_escola_val
             st.session_state["_prev_escola_grid_key"] = escola_grid_key
 
             escola_aggrid_response = render_saedas_aggrid(
@@ -1151,15 +930,18 @@ def page_home():
             )
             st.markdown("</div>", unsafe_allow_html=True)
 
-            escola_selected_rows = escola_aggrid_response.get("selected_rows", None)
-            if escola_selected_rows is not None and not escola_key_changed:
-                if isinstance(escola_selected_rows, pd.DataFrame):
-                    escola_selected_rows = escola_selected_rows.to_dict(
-                        orient="records"
-                    )
-                elif isinstance(escola_selected_rows, dict):
-                    escola_selected_rows = [escola_selected_rows]
+            # AgGrid pode retornar None quando não há seleção, tratamos como lista vazia []
+            escola_selected_rows_raw = escola_aggrid_response.get("selected_rows")
+            escola_selected_rows = []
+            if escola_selected_rows_raw is not None:
+                if isinstance(escola_selected_rows_raw, pd.DataFrame):
+                    escola_selected_rows = escola_selected_rows_raw.to_dict(orient="records")
+                elif isinstance(escola_selected_rows_raw, dict):
+                    escola_selected_rows = [escola_selected_rows_raw]
+                else:
+                    escola_selected_rows = list(escola_selected_rows_raw)
 
+            if not escola_key_changed:
                 if escola_field:
                     selected_escolas = [
                         row.get(escola_field)
@@ -1167,7 +949,7 @@ def page_home():
                         if row.get(escola_field) and row.get(escola_field) != "TOTAL"
                     ]
 
-                    if set(selected_escolas) != set(selected_escolas_sidebar):
+                    if set(map(str, selected_escolas)) != set(map(str, selected_escolas_sidebar)):
                         st.session_state["pending_sidebar_escola_filter"] = selected_escolas
                         st.session_state["last_interaction_source"] = "table_school"
                         st.session_state["_suppress_escola_key_change"] = True
@@ -2001,6 +1783,7 @@ def page_home():
                 df_display["DtInicio"]
                 .astype(str)
                 .replace(["None", "none", "NaN", "nan", ""], np.nan)
+                .infer_objects(copy=False)
             )
 
             # 2. Converter para datetime. np.nan e strings não parseáveis viram NaT.
@@ -2028,6 +1811,7 @@ def page_home():
                 df_display["DtFechamento"]
                 .astype(str)
                 .replace(["None", "none", "NaN", "nan", ""], np.nan)
+                .infer_objects(copy=False)
             )
 
             # 2. Converter para datetime. np.nan e strings não parseáveis viram NaT.
@@ -2341,7 +2125,7 @@ def page_home():
         # --- Table display logic ---
 
         if not df_display.empty:  # Only display if there's data to show
-            empty_rows_mask = df_display.replace("", np.nan).isna().all(axis=1)
+            empty_rows_mask = df_display.replace("", np.nan).infer_objects(copy=False).isna().all(axis=1)
 
             if empty_rows_mask.any():
                 df_display = df_display.loc[~empty_rows_mask].copy()
@@ -2569,50 +2353,24 @@ def page_home():
                 columns=EXCLUDED_EXPORT_COLUMNS, errors="ignore"
             )
 
-            csv_visible_data = df_display_for_export.to_csv(
-                index=False, sep=";"
-            ).encode("utf-8-sig")
-
             _colunas_ativo = st.session_state["home_show_column_selector"]
 
             if st.session_state["home_show_column_selector"]:
                 st.markdown('<div class="column-toggle-active"></div>', unsafe_allow_html=True)
 
             with st.container(key="home_detail_toolbar"):
-                _, col1, col2, col3 = st.columns([0.55, 0.15, 0.15, 0.15])
-                with col1:
-                    if st.button(
-                        "⚙️ Colunas",
-                        key="home_toolbar_column_toggle",
-                        help="Mostrar/ocultar colunas da tabela",
-                        use_container_width=True
-                    ):
-                        st.session_state["home_show_column_selector"] = not _colunas_ativo
-
-                with col2:
-                    if st.button(
-                        "📋 Copiar",
-                        key="home_toolbar_copy",
-                        help="Copiar tabela para área de transferência (Excel)",
-                        use_container_width=True
-                    ):
-                        try:
-                            df_display_for_copy.to_clipboard(index=False, excel=True)
-                            st.toast("Tabela copiada. Cole no Excel com Ctrl+V.")
-                        except Exception as _copy_exc:
-                            st.toast(f"Não foi possível copiar: {_copy_exc}", icon="❌")
-
-                with col3:
-                    st.download_button(
-                        label="⬇️ CSV",
-                        data=csv_visible_data,
-                        file_name="detalhamento_home.csv",
-                        mime="text/csv",
-                        key="download_csv_home_toolbar",
-                        help="Exportar tabela como CSV",
-                        use_container_width=True
-                    )
-
+                if render_table_toolbar(
+                    df_display_for_copy,
+                    "detalhamento_home.csv",
+                    "home_detail",
+                    df_download=df_display_for_export,
+                    leading_action_label="Colunas",
+                    leading_action_key="home_toolbar_column_toggle",
+                    leading_action_help="Mostrar/ocultar colunas da tabela",
+                    copy_key="home_toolbar_copy",
+                    download_key="download_csv_home_toolbar",
+                ):
+                    st.session_state["home_show_column_selector"] = not _colunas_ativo
             if st.session_state["home_show_column_selector"]:
                 with st.container(key="home_columns_panel", border=True):
                     st.markdown(
@@ -2632,14 +2390,9 @@ def page_home():
                     ]
 
                     if column_groups:
-                        with st.container(
-                            key="home_columns_grid",
-                            horizontal=True,
-                            horizontal_alignment="left",
-                            vertical_alignment="top",
-                            gap=None,
-                        ):
-                            for group_idx, group_columns in enumerate(column_groups):
+                        cols_grid = st.columns(len(column_groups))
+                        for group_idx, group_columns in enumerate(column_groups):
+                            with cols_grid[group_idx]:
                                 with st.container(
                                     key=f"home_columns_group_{group_idx}", border=False
                                 ):

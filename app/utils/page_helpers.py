@@ -450,33 +450,43 @@ def render_top_por_urg(df, value_col, titulo, label_col, table_key=None, active_
             active_values_for_key = active_row_value if isinstance(active_row_value, list) else ([active_row_value] if active_row_value else [])
             active_values_for_key = [str(v) for v in active_values_for_key if v not in (None, "")]
             table_state_suffix = "|".join(sorted(active_values_for_key)) if active_values_for_key else "all"
+            aggrid_key = f"{table_key or label_col}_aggrid_top_urg_{table_state_suffix}"
+            table_key_changed = False
+            if table_key:
+                table_state_key = f"{table_key}__aggrid_key"
+                table_key_changed = st.session_state.get(table_state_key) != aggrid_key
+                st.session_state[table_state_key] = aggrid_key
+
             aggrid_response = render_saedas_aggrid(
                 df_body,
                 grid_options=grid_options,
-                key=f"{table_key or label_col}_aggrid_top_urg_{table_state_suffix}",
+                key=aggrid_key,
                 update_mode=GridUpdateMode.SELECTION_CHANGED if table_key else GridUpdateMode.NO_UPDATE,
                 incluir_total=bool(footer_rows),
             )
             st.markdown("</div>", unsafe_allow_html=True)
 
             if table_key and label_field:
-                selected_rows = aggrid_response.get("selected_rows", None)
-                has_grid_selection_payload = selected_rows is not None
-                if isinstance(selected_rows, pd.DataFrame):
-                    selected_rows = selected_rows.to_dict(orient="records")
-                elif isinstance(selected_rows, dict):
-                    selected_rows = [selected_rows]
-                if has_grid_selection_payload:
-                    selected_rows = selected_rows or []
+                # AgGrid pode retornar None quando não há seleção, tratamos como lista vazia []
+                selected_rows_raw = aggrid_response.get("selected_rows")
+                selected_rows = []
+                if selected_rows_raw is not None:
+                    if isinstance(selected_rows_raw, pd.DataFrame):
+                        selected_rows = selected_rows_raw.to_dict(orient="records")
+                    elif isinstance(selected_rows_raw, dict):
+                        selected_rows = [selected_rows_raw]
+                    else:
+                        selected_rows = list(selected_rows_raw)
+
+                # Só processamos se a key não mudou
+                if not table_key_changed:
                     selected_values = [
                         row.get(label_field)
                         for row in selected_rows
                         if row.get(label_field) not in (None, "", "TOTAL")
                     ]
-                    # Guard: if grid returned empty but sidebar already has active values,
-                    # the grid just re-rendered (new key) and JS hasn't fired yet — skip overwrite.
-                    if selected_values or not active_values:
-                        st.session_state[f"{table_key}__selected_values"] = selected_values
+                    # Sincronização Granular: Removemos a guarda restritiva para permitir a limpeza total ([])
+                    st.session_state[f"{table_key}__selected_values"] = selected_values
                     selected_indexes = [
                         idx
                         for idx, value in enumerate(df_cmp_aggrid[label_field].tolist())
@@ -651,9 +661,11 @@ def build_comparativo_anual(
         if c in abs_cols:
             total_row[c] = df_cmp[c].sum()
         elif c in pct_cols:
-            total_row[c] = pd.NA
+            total_row[c] = np.nan
 
-    df_cmp = pd.concat([df_cmp, pd.DataFrame([total_row])], ignore_index=True)
+    # Cria o DF da linha de total. O Pandas agora lida melhor com np.nan para tipos float.
+    total_row_df = pd.DataFrame([total_row])
+    df_cmp = pd.concat([df_cmp, total_row_df], ignore_index=True)
 
     df_display = df_cmp.copy()
     for c in abs_cols:
@@ -905,64 +917,222 @@ def render_saedas_aggrid(
     )
 
 
-def render_table_toolbar(df_export: pd.DataFrame, file_name: str, key_prefix: str):
-    """Renderiza a barra de ferramentas (Copiar e CSV) para tabelas alinhada à direita."""
-    csv_data = df_export.to_csv(index=False, sep=";").encode("utf-8-sig")
+def prepare_table_toolbar_exports(df_export: pd.DataFrame) -> tuple[bytes, str]:
+    """Prepara os formatos padrao da toolbar: CSV para download e TSV para copia."""
+    csv_data = df_export.to_csv(index=False, sep=";", lineterminator="\n").encode("utf-8-sig")
+    copy_text = df_export.to_csv(index=False, sep="\t", lineterminator="\n")
+    return csv_data, copy_text
+
+
+def render_table_toolbar(
+    df_export: pd.DataFrame,
+    file_name: str,
+    key_prefix: str,
+    *,
+    df_download: pd.DataFrame | None = None,
+    leading_action_label: str | None = None,
+    leading_action_key: str | None = None,
+    leading_action_help: str | None = None,
+    copy_key: str | None = None,
+    download_key: str | None = None,
+) -> bool:
+    """Renderiza a barra padrao de tabela e retorna clique da acao opcional."""
+    _, table_text = prepare_table_toolbar_exports(df_export)
+    csv_data, _ = prepare_table_toolbar_exports(df_download if df_download is not None else df_export)
     
-    # Criamos colunas para forçar o agrupamento horizontal e alinhamento à direita
-    # O primeiro espaço é vazio para empurrar os botões para a direita
-    _, col_copy, col_csv = st.columns([0.85, 0.08, 0.07], gap="small")
+    # Marcador para estilização via styles.css
+    st.markdown('<div class="table-actions-toolbar"></div>', unsafe_allow_html=True)
     
-    with col_copy:
-        if st.button("📋 Copiar", key=f"copy_{key_prefix}", help="Copiar tabela para a área de transferência"):
-            try:
-                # Geramos o texto em formato TSV (Tab-Separated Values) que é o padrão esperado pelo Excel
-                table_text = df_export.to_csv(index=False, sep="\t")
-                
-                # Injeção de JavaScript para realizar a cópia no lado do cliente (navegador)
-                st.components.v1.html(
-                    f"""
-                    <script>
-                    async function copyToClipboard() {{
-                        const text = {json.dumps(table_text)};
-                        try {{
-                            if (navigator.clipboard && navigator.clipboard.writeText) {{
-                                await navigator.clipboard.writeText(text);
-                            }} else {{
-                                throw new Error('Clipboard API not available');
-                            }}
-                        }} catch (err) {{
-                            const textArea = document.createElement("textarea");
-                            textArea.value = text;
-                            textArea.style.position = "fixed";
-                            textArea.style.left = "-9999px";
-                            textArea.style.top = "0";
-                            document.body.appendChild(textArea);
-                            textArea.focus();
-                            textArea.select();
-                            try {{
-                                document.execCommand('copy');
-                            }} catch (copyErr) {{
-                                console.error('Erro no fallback de cópia:', copyErr);
-                            }}
-                            document.body.removeChild(textArea);
-                        }}
-                    }}
-                    copyToClipboard();
-                    </script>
-                    """,
-                    height=0
-                )
-                st.toast("Tabela copiada com sucesso!", icon="✅")
-            except Exception as exc:
-                st.toast(f"Erro ao processar cópia: {exc}", icon="❌")
-                
-    with col_csv:
-        st.download_button(
-            label="⬇️ CSV",
-            data=csv_data,
-            file_name=file_name,
-            mime="text/csv",
-            key=f"download_{key_prefix}",
-            help="Baixar tabela em formato CSV"
+    # Variável de controle para execução fora do bloco de colunas
+    trigger_copy = False
+    leading_action_clicked = False
+    
+    if leading_action_label:
+        cols = st.columns([0.65, 0.35], gap="small")
+        group_col = cols[1]
+    else:
+        cols = st.columns([0.82, 0.18], gap="small")
+        group_col = cols[1]
+    
+    # Se houver ação leading, criamos um trigger oculto no Streamlit
+    hidden_trigger_key = f"trigger_{key_prefix}"
+    leading_action_clicked = False
+    
+    if leading_action_label:
+        # Checkbox invisível para capturar o clique do JS
+        if hidden_trigger_key not in st.session_state:
+            st.session_state[hidden_trigger_key] = False
+            
+        # Capturamos o valor e resetamos ANTES de instanciar o widget
+        if st.session_state.get(hidden_trigger_key):
+            leading_action_clicked = True
+            st.session_state[hidden_trigger_key] = False
+
+        st.checkbox(
+            "hidden_trigger", 
+            key=hidden_trigger_key, 
+            label_visibility="collapsed"
         )
+
+        # CSS para esconder o trigger mas mantê-lo no DOM para o JS encontrar
+        st.markdown(f"""
+            <style>
+                div[data-testid="stCheckbox"]:has(input[aria-label="hidden_trigger"]) {{
+                    display: none !important;
+                }}
+            </style>
+        """, unsafe_allow_html=True)
+
+    with group_col:
+        # Prepara dados para o JS
+        csv_str = (df_download if df_download is not None else df_export).to_csv(index=False, sep=";", lineterminator="\n")
+        
+        # Define os botões HTML
+        action_btn_html = ""
+        if leading_action_label:
+            action_btn_html = f'<button id="action-btn" title="{leading_action_help or ""}">⚙️ {leading_action_label}</button>'
+        
+        # Borda esquerda do botão Copiar depende se existe o botão de ação
+        copy_border_radius = "0" if leading_action_label else "6px 0 0 6px"
+        copy_border_left = "none" if leading_action_label else "1px solid #334155"
+
+        st.components.v1.html(
+            f"""
+            <style>
+                * {{ box-sizing: border-box; }}
+                body {{
+                    margin: 0;
+                    padding: 0;
+                    overflow: hidden;
+                    background: transparent;
+                    display: flex;
+                    align-items: center;
+                    justify-content: flex-end;
+                    height: 100vh;
+                    width: 100vw;
+                }}
+                .btn-group {{
+                    display: flex;
+                    justify-content: flex-end;
+                    width: auto;
+                    height: 34px;
+                }}
+                button {{
+                    background: transparent;
+                    border: 1px solid #334155;
+                    color: #94a3b8;
+                    height: 34px;
+                    padding: 0 12px;
+                    font-size: 0.78rem;
+                    font-family: "Source Sans Pro", sans-serif;
+                    font-weight: 600;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 6px;
+                    white-space: nowrap;
+                    transition: all 0.15s ease;
+                    box-sizing: border-box;
+                }}
+                #action-btn {{
+                    border-radius: 6px 0 0 6px;
+                    border-right: none;
+                    min-width: 80px;
+                }}
+                #copy-btn {{
+                    border-radius: {copy_border_radius};
+                    border-left: {copy_border_left};
+                    border-right: none;
+                    min-width: 90px;
+                }}
+                #download-btn {{
+                    border-radius: 0 6px 6px 0;
+                    background: rgba(56, 189, 248, 0.1);
+                    color: #38bdf8;
+                    border-color: #334155;
+                    min-width: 80px;
+                }}
+                button:hover {{
+                    border-color: #38bdf8;
+                    color: #38bdf8;
+                    z-index: 2;
+                    background: rgba(255, 255, 255, 0.05);
+                }}
+                #download-btn:hover {{
+                    background: rgba(56, 189, 248, 0.2);
+                    color: #7dd3fc;
+                }}
+                .success {{
+                    color: #10b981 !important;
+                    border-color: #10b981 !important;
+                }}
+            </style>
+            <div class="btn-group">
+                {action_btn_html}
+                <button id="copy-btn">📋 Copiar</button>
+                <button id="download-btn">⬇️ CSV</button>
+            </div>
+            <script>
+            const copyBtn = document.getElementById('copy-btn');
+            const downloadBtn = document.getElementById('download-btn');
+            const actionBtn = document.getElementById('action-btn');
+            
+            if (actionBtn) {{
+                actionBtn.addEventListener('click', () => {{
+                    // Busca o checkbox oculto no Streamlit e simula o clique
+                    const selector = 'div[data-testid="stCheckbox"]:has(input[aria-label="hidden_trigger"]) input';
+                    const trigger = window.parent.document.querySelector(selector);
+                    if (trigger) {{
+                        trigger.click();
+                    }} else {{
+                        console.error("Trigger não encontrado");
+                    }}
+                }});
+            }}
+            
+            copyBtn.addEventListener('click', async () => {{
+                const text = {json.dumps(table_text)};
+                try {{
+                    if (navigator.clipboard && navigator.clipboard.writeText) {{
+                        await navigator.clipboard.writeText(text);
+                    }} else {{
+                        const textArea = document.createElement("textarea");
+                        textArea.value = text;
+                        textArea.style.position = "fixed"; textArea.style.left = "-9999px";
+                        document.body.appendChild(textArea);
+                        textArea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textArea);
+                    }}
+                    const originalText = copyBtn.innerHTML;
+                    copyBtn.innerHTML = "✅ Copiado!";
+                    copyBtn.classList.add('success');
+                    setTimeout(() => {{
+                        copyBtn.innerHTML = originalText;
+                        copyBtn.classList.remove('success');
+                    }}, 2000);
+                }} catch (err) {{
+                    copyBtn.innerHTML = "❌ Erro";
+                    setTimeout(() => {{ copyBtn.innerHTML = "📋 Copiar"; }}, 2000);
+                }}
+            }});
+            
+            downloadBtn.addEventListener('click', () => {{
+                const csv = {json.dumps(csv_str)};
+                const blob = new Blob(["\\ufeff" + csv], {{ type: 'text/csv;charset=utf-8;' }});
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("download", "{file_name}");
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }});
+            </script>
+            """,
+            height=40
+        )
+
+    return leading_action_clicked

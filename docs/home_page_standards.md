@@ -40,9 +40,7 @@ st.markdown(f"""
 A Home é o hub central de filtragem temporal e regional.
 
 ### 2.1 Seletor de Ano Mestre
-- **Componente:** `st.segmented_control` com estilo customizado.
-- **Visual:** Botões agrupados com bordas arredondadas apenas nas extremidades.
-- **Lógica:** Qualquer mudança nos botões dispara `sync_home_to_sidebar`, que atualiza o estado global e os filtros da sidebar instantaneamente.
+Componente central de filtragem temporal. Para especificações técnicas e visuais, consulte o padrão de [Seletor Temporal Mestre](specs/shared_components_spec.md#2-seletor-temporal-mestre-botoes-de-ano).
 
 ### 2.2 Sincronismo Sidebar/Página
 - **Fonte de Verdade:** `st.session_state["global_years"]` e `st.session_state["global_urgs"]`.

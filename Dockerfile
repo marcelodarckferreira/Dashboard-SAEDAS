@@ -1,4 +1,4 @@
-FROM python:3.12-slim-bookworm
+FROM python:3.13-slim-bookworm
 
 # Evita que o Python gere arquivos .pyc e garante log em tempo real
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -27,8 +27,12 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copia o restante do código (esta camada muda frequentemente)
+# Copia o código para dentro da pasta app
 COPY app/ app/
+
+# Cria links simbólicos para que o código encontre 'data' e 'assets' na raiz
+# Isso resolve o problema de caminhos sem mudar a estrutura de pastas
+RUN ln -s app/data data && ln -s app/assets assets
 
 # Expõe a porta padrão do Streamlit
 EXPOSE 8501

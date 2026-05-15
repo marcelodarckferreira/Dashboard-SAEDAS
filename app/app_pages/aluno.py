@@ -15,6 +15,11 @@ from app.utils.schemas import (
     SCHEMA_EXAME_ALUNO,
     SCHEMA_VACINACAO_ALUNO,
     SCHEMA_NUTRICAO_ALUNO,
+    SCHEMA_MEDICO_ALUNO,
+    SCHEMA_ENFERMAGEM_ALUNO,
+    SCHEMA_PROFESSOR_ALUNO,
+    SCHEMA_PSICOLOGO_ALUNO,
+    SCHEMA_ASSISTENCIA_SOCIAL_ALUNO,
 )
 
 
@@ -34,6 +39,21 @@ def carregar_dados_aluno():
     )
     nutri_df, nutri_info = load_wrapper(
         "data/DashboardNutricaoAluno.csv", SCHEMA_NUTRICAO_ALUNO
+    )
+    med_df, med_info = load_wrapper(
+        "data/DashboardMedicoAluno.csv", SCHEMA_MEDICO_ALUNO
+    )
+    enf_df, enf_info = load_wrapper(
+        "data/DashboardEnfermagemAluno.csv", SCHEMA_ENFERMAGEM_ALUNO
+    )
+    prof_df, prof_info = load_wrapper(
+        "data/DashboardProfessorAluno.csv", SCHEMA_PROFESSOR_ALUNO
+    )
+    psico_df, psico_info = load_wrapper(
+        "data/DashboardPsicologoAluno.csv", SCHEMA_PSICOLOGO_ALUNO
+    )
+    as_df, as_info = load_wrapper(
+        "data/DashboardAssistenciaSocialAluno.csv", SCHEMA_ASSISTENCIA_SOCIAL_ALUNO
     )
 
     return {
@@ -60,6 +80,36 @@ def carregar_dados_aluno():
             "info": nutri_info,
             "label": "Nutrição",
             "arquivo": "DashboardNutricaoAluno.csv",
+        },
+        "medico": {
+            "df": med_df,
+            "info": med_info,
+            "label": "Médico",
+            "arquivo": "DashboardMedicoAluno.csv",
+        },
+        "enfermagem": {
+            "df": enf_df,
+            "info": enf_info,
+            "label": "Enfermagem",
+            "arquivo": "DashboardEnfermagemAluno.csv",
+        },
+        "professor": {
+            "df": prof_df,
+            "info": prof_info,
+            "label": "Professor",
+            "arquivo": "DashboardProfessorAluno.csv",
+        },
+        "psicologo": {
+            "df": psico_df,
+            "info": psico_info,
+            "label": "Psicólogo",
+            "arquivo": "DashboardPsicologoAluno.csv",
+        },
+        "assistencia_social": {
+            "df": as_df,
+            "info": as_info,
+            "label": "Assistência Social",
+            "arquivo": "DashboardAssistenciaSocialAluno.csv",
         },
     }
 
@@ -130,8 +180,13 @@ def page_aluno():
     df_nutri = prepare_df(
         datasets["nutricao"]["df"], "Nutrição", "Nutricao", evento_label="Classificação"
     )
+    df_med = prepare_df(datasets["medico"]["df"], "Médico", "Profissional")
+    df_enf = prepare_df(datasets["enfermagem"]["df"], "Enfermagem", "Profissional")
+    df_prof = prepare_df(datasets["professor"]["df"], "Professor", "Profissional")
+    df_psico = prepare_df(datasets["psicologo"]["df"], "Psicólogo", "Profissional")
+    df_as = prepare_df(datasets["assistencia_social"]["df"], "Assistência Social", "Profissional")
 
-    df_all = pd.concat([df_consulta, df_exame, df_vac, df_nutri], ignore_index=True)
+    df_all = pd.concat([df_consulta, df_exame, df_vac, df_nutri, df_med, df_enf, df_prof, df_psico, df_as], ignore_index=True)
 
     st.sidebar.title("Filtros - Aluno")
     busca_aluno = st.sidebar.text_input(
@@ -202,12 +257,14 @@ def page_aluno():
     aluno_sel_row = alunos_unicos.iloc[aluno_idx]
     aluno_sel = aluno_sel_row["Aluno"]
     nasc_sel = aluno_sel_row["DataNascimento"]
-
-    df_filtrado = df_all[df_all["Aluno"].astype(str) == aluno_sel].copy()
-    if "DataNascimento" in df_filtrado.columns and not pd.isna(nasc_sel):
-        df_filtrado = df_filtrado[
-            pd.to_datetime(df_filtrado["DataNascimento"], errors="coerce") == nasc_sel
+    
+    # Busca o Sexo no dataframe filtrado
+    df_filtrado_temp = df_all[df_all["Aluno"].astype(str) == aluno_sel].copy()
+    if "DataNascimento" in df_filtrado_temp.columns and not pd.isna(nasc_sel):
+        df_filtrado_temp = df_filtrado_temp[
+            pd.to_datetime(df_filtrado_temp["DataNascimento"], errors="coerce") == nasc_sel
         ]
+    sexo_sel = df_filtrado_temp["Sexo"].iloc[0] if not df_filtrado_temp.empty and "Sexo" in df_filtrado_temp.columns else "N/A"
 
     nasc_display = (
         [nasc_sel.strftime("%d/%m/%Y")] if not pd.isna(nasc_sel) else []
@@ -218,14 +275,18 @@ def page_aluno():
             {
                 "aluno": [aluno_sel],
                 "nascimento": nasc_display,
+                "sexo": [sexo_sel]
             },
             df_all,
             [
                 ("aluno", "Aluno", "Aluno"),
                 ("nascimento", "DataNascimento", "Nascimento"),
+                ("sexo", "Sexo", "Sexo"),
             ],
         )
     )
+
+    df_filtrado = df_filtrado_temp # Usa o que já filtramos
 
     if df_filtrado.empty:
         st.warning("Nenhum dado encontrado para o filtro selecionado.")
@@ -240,30 +301,18 @@ def page_aluno():
     st.subheader("Indicadores Gerais")
     render_metric("Total de registros", total_registros)
 
-    # Linha extra de indicadores específicos para encaminhamentos
-    df_enc = df_filtrado[df_filtrado["Categoria"] == "Encaminhamento"]
-    if not df_enc.empty and "Evento" in df_enc.columns:
-        psico_count = int(
-            df_enc["Evento"].astype(str).str.contains("PSICO", case=False, na=False).sum()
-        )
-        medico_count = int(
-            df_enc["Evento"].astype(str).str.contains("MED", case=False, na=False).sum()
-        )
-    else:
-        psico_count = 0
-        medico_count = 0
-
-    row_psico_med = [("Psicólogo", psico_count), ("Médico", medico_count)]
-    cols_psico_med = st.columns(4)
-    for col, card in zip(cols_psico_med, row_psico_med):
-        with col:
-            render_metric_cards([card])
+    # Exibição unificada de indicadores por categoria
 
     cat_order = [
         ("Encaminhamento", "Encaminhamento"),
         ("Exame", "Exame"),
         ("Vacinação", "Vacinação"),
         ("Nutrição", "Nutrição"),
+        ("Médico", "Médico"),
+        ("Enfermagem", "Enfermagem"),
+        ("Professor", "Professor"),
+        ("Psicólogo", "Psicólogo"),
+        ("Assistência Social", "Assist. Social"),
     ]
     linha_categorias = [
         (label, tot_por_cat.get(cat_key, 0)) for cat_key, label in cat_order
@@ -423,6 +472,7 @@ def page_aluno():
             return
         cols_to_show = [
             "Ano",
+            "ID",
             "URG",
             "Escola",
             "Evento",
@@ -457,6 +507,11 @@ def page_aluno():
         "Nutrição",
         extra_cols=["Peso", "Altura", "IMC"],
     )
+    render_section(df_filtrado[df_filtrado["Categoria"] == "Médico"], "Médico")
+    render_section(df_filtrado[df_filtrado["Categoria"] == "Enfermagem"], "Enfermagem")
+    render_section(df_filtrado[df_filtrado["Categoria"] == "Professor"], "Professor")
+    render_section(df_filtrado[df_filtrado["Categoria"] == "Psicólogo"], "Psicólogo")
+    render_section(df_filtrado[df_filtrado["Categoria"] == "Assistência Social"], "Assistência Social")
 
     st.markdown(" ")
     footer_personal()

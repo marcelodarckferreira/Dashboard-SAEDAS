@@ -1,7 +1,8 @@
 import pandas as pd
+from pathlib import Path
 
 from app.utils import page_helpers
-from app.utils.page_helpers import get_selected_comparativo_value
+from app.utils.page_helpers import get_selected_comparativo_value, prepare_table_toolbar_exports
 
 
 class StreamlitStub:
@@ -42,3 +43,33 @@ def test_get_selected_comparativo_value_returns_valid_multiindex_value():
 
     assert get_selected_comparativo_value(df, [0], "Escola") == "EMEF 1"
     assert get_selected_comparativo_value(df, [1], "Escola") is None
+
+
+def test_prepare_table_toolbar_exports_uses_csv_and_tsv_formats():
+    df = pd.DataFrame({"URG": ["URG I-CENTRO"], "Qtd": [160]})
+
+    csv_data, copy_text = prepare_table_toolbar_exports(df)
+
+    assert csv_data == "URG;Qtd\nURG I-CENTRO;160\n".encode("utf-8-sig")
+    assert copy_text == "URG\tQtd\nURG I-CENTRO\t160\n"
+
+
+def test_home_detail_toolbar_uses_shared_table_toolbar_component():
+    source = Path("app/app_pages/home.py").read_text(encoding="utf-8")
+
+    assert 'with st.container(key="home_detail_toolbar")' in source
+    assert "render_table_toolbar(" in source
+    assert 'leading_action_label="⚙️ Colunas"' in source
+    assert ".to_clipboard(" not in source
+
+
+def test_massive_year_selector_targets_streamlit_button_group_dom():
+    css = Path("app/assets/styles.css").read_text(encoding="utf-8")
+
+    assert '.st-key-massive_year_selector [data-testid="stButtonGroup"]' in css
+    assert '.st-key-massive_year_selector [data-baseweb="button-group"]' in css
+    assert "grid-template-columns: repeat(5, minmax(0, 1fr)) !important;" in css
+    assert "height: 100% !important;" in css
+    assert "place-items: center !important;" in css
+    assert "position: absolute !important;" in css
+    assert "inset: 0 !important;" in css

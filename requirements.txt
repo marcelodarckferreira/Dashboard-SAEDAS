@@ -1,7 +1,7 @@
-# Core Framework
+# Framework Core
 streamlit==1.40.1
 pandas==2.2.3
-numpy==1.26.4
+numpy==2.1.2
 plotly==5.24.1
 
 # UI Components
@@ -13,18 +13,20 @@ Pillow==10.4.0
 requests==2.32.3
 python-decouple==3.8
 redis==5.0.8
-pyarrow==17.0.0
+pyarrow==18.0.0
 
-# Statistical Analysis (Used by some modules)
-scipy==1.13.1
-statsmodels==0.14.2
+# Statistical Analysis
+scipy==1.14.1
+statsmodels==0.14.4
 patsy==0.5.6
 
-# Utilities
-watchdog==4.0.2
+# Utilities & Dependencies
+watchdog==5.0.3
 altair==5.4.1
 Jinja2==3.1.4
 python-dateutil==2.9.0.post0
 pytz==2024.2
 urllib3==2.2.3
 certifi==2024.8.30
+tenacity==9.1.4
+tzdata==2026.2

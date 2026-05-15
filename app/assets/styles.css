@@ -5,42 +5,44 @@
 
 /* 1. VARIÁVEIS BASE (PADRÃO DARK) */
 :root {
-    --surface-primary:   #0f172a;
+    --surface-primary: #0f172a;
     --surface-secondary: #1e293b;
-    --surface-elevated:  #1e293b;
-    --text-active:       #38bdf8;
+    --surface-elevated: #1e293b;
+    --text-active: #38bdf8;
 
-    --border-ui:         #334155;
-    --header-bg:         #1e293b;
-    --header-text:       #cbd5e1;
+    --border-ui: #334155;
+    --header-bg: #1e293b;
+    --header-text: #cbd5e1;
 
     /* Pro Footer — cor fixa de marca, independente de tema */
-    --footer-bg:         #1e293b;
-    --footer-text:       #cbd5e1;
+    --footer-bg: #1e293b;
+    --footer-text: #cbd5e1;
 
-    --accent-color:      #38bdf8;
+    --accent-color: #38bdf8;
     --accent-color-alpha: rgba(56, 189, 248, 0.3);
 }
 
 /* 2. DETECÇÃO AUTOMÁTICA PELO NAVEGADOR (MODO CLARO) */
 @media (prefers-color-scheme: light) {
     :root {
-        --surface-primary:   #ffffff;
+        --surface-primary: #ffffff;
         --surface-secondary: #f8fafc;
-        --surface-elevated:  #f1f5f9;
-        --surface-active:    #dbeafe;  /* blue-100 sólido */
-        --surface-hover:     #f1f5f9;
-        --text-active:       #1e40af;  /* blue-800 */
+        --surface-elevated: #f1f5f9;
+        --surface-active: #dbeafe;
+        /* blue-100 sólido */
+        --surface-hover: #f1f5f9;
+        --text-active: #1e40af;
+        /* blue-800 */
 
-        --border-ui:         #e2e8f0;
-        --header-bg:         #f8fafc;
-        --header-text:       #475569;
+        --border-ui: #e2e8f0;
+        --header-bg: #f8fafc;
+        --header-text: #475569;
 
         /* Pro Footer */
-        --footer-bg:         #1e293b;
-        --footer-text:       #cbd5e1;
+        --footer-bg: #1e293b;
+        --footer-text: #cbd5e1;
 
-        --accent-color:      #2563eb;
+        --accent-color: #2563eb;
         --accent-color-alpha: rgba(37, 99, 235, 0.15);
     }
 }
@@ -52,42 +54,46 @@
 [data-theme="light"],
 .stApp[data-theme="light"],
 [data-testid="stAppViewContainer"][data-theme="light"] {
-    --surface-primary:   #ffffff !important;
+    --surface-primary: #ffffff !important;
     --surface-secondary: #f8fafc !important;
-    --surface-elevated:  #f1f5f9 !important;
-    --surface-active:    #dbeafe !important;  /* blue-100 sólido */
-    --surface-hover:     #f1f5f9 !important;
+    --surface-elevated: #f1f5f9 !important;
+    --surface-active: #dbeafe !important;
+    /* blue-100 sólido */
+    --surface-hover: #f1f5f9 !important;
 
-    --text-main:         #1e293b !important;
-    --text-muted:        #64748b !important;
-    --text-active:       #1e40af !important;  /* blue-800 */
+    --text-main: #1e293b !important;
+    --text-muted: #64748b !important;
+    --text-active: #1e40af !important;
+    /* blue-800 */
 
-    --border-ui:         #e2e8f0 !important;
-    --header-bg:         #f8fafc !important;
-    --header-text:       #475569 !important;
-    --footer-bg:         #1e293b !important;
-    --footer-text:       #cbd5e1 !important;
+    --border-ui: #e2e8f0 !important;
+    --header-bg: #f8fafc !important;
+    --header-text: #475569 !important;
+    --footer-bg: #1e293b !important;
+    --footer-text: #cbd5e1 !important;
 }
 
 /* Forçar Modo Escuro */
 [data-theme="dark"],
 .stApp[data-theme="dark"],
 [data-testid="stAppViewContainer"][data-theme="dark"] {
-    --surface-primary:   #0f172a !important;
+    --surface-primary: #0f172a !important;
     --surface-secondary: #1e293b !important;
-    --surface-elevated:  #1e293b !important;
-    --surface-active:    #1e3a8a !important;  /* blue-900 sólido */
-    --surface-hover:     #334155 !important;
+    --surface-elevated: #1e293b !important;
+    --surface-active: #1e3a8a !important;
+    /* blue-900 sólido */
+    --surface-hover: #334155 !important;
 
-    --text-main:         #f1f5f9 !important;
-    --text-muted:        #94a3b8 !important;
-    --text-active:       #bfdbfe !important;  /* blue-200 */
+    --text-main: #f1f5f9 !important;
+    --text-muted: #94a3b8 !important;
+    --text-active: #bfdbfe !important;
+    /* blue-200 */
 
-    --border-ui:         #334155 !important;
-    --header-bg:         #1e293b !important;
-    --header-text:       #cbd5e1 !important;
-    --footer-bg:         #1e293b !important;
-    --footer-text:       #cbd5e1 !important;
+    --border-ui: #334155 !important;
+    --header-bg: #1e293b !important;
+    --header-text: #cbd5e1 !important;
+    --footer-bg: #1e293b !important;
+    --footer-text: #cbd5e1 !important;
 }
 
 /* ============================================================
@@ -104,7 +110,8 @@
     flex-direction: column !important;
     align-items: flex-start !important;
     justify-content: center !important;
-    background-color: #0f172a !important; /* Base sólida escura */
+    background-color: #0f172a !important;
+    /* Base sólida escura */
     border: 1.5px solid transparent !important;
     background-image: linear-gradient(#0f172a, #0f172a), linear-gradient(135deg, #38bdf8 0%, #1e40af 100%) !important;
     background-origin: border-box !important;
@@ -153,13 +160,125 @@
 [data-testid="stButton"] button[kind="primary"] {
     background-color: var(--header-bg) !important;
     border: 2px solid var(--accent-color) !important;
-    box-shadow: 0 0 0 2px var(--surface-primary), 0 0 20px var(--accent-color-alpha) !important; /* Efeito de borda dupla */
+    box-shadow: 0 0 0 2px var(--surface-primary), 0 0 20px var(--accent-color-alpha) !important;
+    /* Efeito de borda dupla */
     opacity: 1 !important;
 }
 
 [data-testid="stButton"] button[kind="primary"]:hover {
     transform: translateY(-3px) !important;
     box-shadow: 0 12px 25px -3px var(--accent-color-alpha) !important;
+}
+
+/* ============================================================
+   Barra de Ferramentas de Tabelas (Copiar + CSV)
+   Padrao unico usado por render_table_toolbar().
+   ============================================================ */
+div[class*="st-key-"][class*="_actions_toolbar"],
+.st-key-home_detail_toolbar {
+    overflow: visible !important;
+}
+
+div[class*="st-key-"][class*="_actions_toolbar"] div[data-testid="stHorizontalBlock"],
+.st-key-home_detail_toolbar div[data-testid="stHorizontalBlock"] {
+    gap: 0 !important;
+    --st-horizontal-block-gap: 0px !important;
+    justify-content: flex-end !important;
+    align-items: center !important;
+    padding-right: 6px !important;
+    overflow: visible !important;
+}
+
+div[class*="st-key-"][class*="_actions_toolbar"] div[data-testid="stColumn"],
+.st-key-home_detail_toolbar div[data-testid="stColumn"] {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: auto !important;
+    flex: 0 1 auto !important;
+    overflow: visible !important;
+    min-height: 40px !important;
+    display: flex !important;
+    align-items: center !important;
+}
+
+div[class*="st-key-"][class*="_actions_toolbar"] [data-testid="stButton"] button,
+div[class*="st-key-"][class*="_actions_toolbar"] [data-testid="stDownloadButton"] button,
+.st-key-home_detail_toolbar [data-testid="stButton"] button,
+.st-key-home_detail_toolbar [data-testid="stDownloadButton"] button {
+    background: transparent !important;
+    background-image: none !important;
+    border: 1px solid #334155 !important;
+    border-right: none !important;
+    box-sizing: border-box !important;
+    border-radius: 0 !important;
+    color: #94a3b8 !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    padding: 0 12px !important;
+    font-size: 0.78rem !important;
+    transition: background 0.15s, color 0.15s, border-color 0.15s !important;
+    margin: 0 !important;
+    width: 100% !important;
+    z-index: 1 !important;
+    white-space: nowrap !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    box-shadow: none !important;
+}
+
+div[class*="st-key-"][class*="_actions_toolbar"] [data-testid="stButton"] button p,
+div[class*="st-key-"][class*="_actions_toolbar"] [data-testid="stDownloadButton"] button p,
+.st-key-home_detail_toolbar [data-testid="stButton"] button p,
+.st-key-home_detail_toolbar [data-testid="stDownloadButton"] button p {
+    white-space: nowrap !important;
+    margin: 0 !important;
+    color: inherit !important;
+    font-size: inherit !important;
+    font-weight: 600 !important;
+    text-transform: none !important;
+    opacity: 1 !important;
+    line-height: 1 !important;
+}
+
+/* Primeiro botão da toolbar (Ação ou Copiar) */
+div[class*="st-key-"][class*="_actions_toolbar"] div[data-testid="stColumn"]:nth-child(2) button,
+.st-key-home_detail_toolbar .st-key-home_toolbar_column_toggle button {
+    border-radius: 6px 0 0 6px !important;
+}
+
+/* O arredondamento agora é tratado dinamicamente no page_helpers.py */
+
+div[class*="st-key-"][class*="_actions_toolbar"] div[class*="st-key-download_"] button,
+.st-key-home_detail_toolbar div[data-testid="stDownloadButton"] button,
+.st-key-home_detail_toolbar .st-key-download_csv_home_toolbar button {
+    border-right: 1px solid #334155 !important;
+    border-radius: 0 6px 6px 0 !important;
+}
+
+div[class*="st-key-"][class*="_actions_toolbar"] [data-testid="stButton"] button:hover,
+div[class*="st-key-"][class*="_actions_toolbar"] [data-testid="stDownloadButton"] button:hover,
+.st-key-home_detail_toolbar [data-testid="stButton"] button:hover,
+.st-key-home_detail_toolbar [data-testid="stDownloadButton"] button:hover {
+    z-index: 2 !important;
+    border-color: #38bdf8 !important;
+    color: #38bdf8 !important;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* Ajuste fino para o botão de cópia em iframe (HTML Component) */
+div[class*="st-key-"][class*="_actions_toolbar"] iframe,
+.st-key-home_detail_toolbar iframe {
+    display: block !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border: none !important;
+    background: transparent !important;
+    height: 40px !important;
 }
 
 /* ============================================================
@@ -232,7 +351,8 @@
     flex-direction: column;
     justify-content: center;
     transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    background-color: #0f172a !important; /* Fundo sólido Profundo */
+    background-color: #0f172a !important;
+    /* Fundo sólido Profundo */
     border: none !important;
     z-index: 1;
     overflow: visible !important;
@@ -374,9 +494,17 @@
 /* ============================================================
    Utilidades
    ============================================================ */
-footer { visibility: hidden; }
-header { visibility: hidden; }
-.block-container { padding-top: 2rem; }
+footer {
+    visibility: hidden;
+}
+
+header {
+    visibility: hidden;
+}
+
+.block-container {
+    padding-top: 2rem;
+}
 
 /* Centralização de cabeçalhos AgGrid */
 .center-header .ag-header-cell-label {
@@ -390,57 +518,155 @@ header { visibility: hidden; }
 
 /* ============================================================
    Seletores de Ano (Segmented Control — Home Page)
+   Estilo: grupo unificado (sem gaps) com estética de card
    ============================================================ */
 .st-key-massive_year_selector {
     margin-top: 1.5rem !important;
     margin-bottom: 2.5rem !important;
 }
 
-/* Container do componente */
-.st-key-massive_year_selector [data-testid="stSegmentedControl"] {
-    gap: 16px !important;
+/* Componente Streamlit do st.segmented_control. */
+.st-key-massive_year_selector [data-testid="stButtonGroup"] {
+    width: 100% !important;
 }
 
-/* Alvo no botão base do Streamlit */
-.st-key-massive_year_selector div[data-testid="stBaseButton-segmented_control"] {
-    height: 80px !important;       /* Altura massiva */
-    min-width: 140px !important;    /* Largura proporcional */
-    border-radius: 16px !important;
-    border: 2px solid var(--border-ui) !important;
-    background-color: var(--surface-secondary) !important;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+/* Grupo BaseWeb interno — grupo conectado com borda accent */
+.st-key-massive_year_selector [data-baseweb="button-group"] {
+    gap: 0 !important;
+    row-gap: 0 !important;
+    column-gap: 0 !important;
+    background-color: #0f172a !important;
+    border-radius: 12px !important;
+    box-shadow: 0 0 0 1.5px #38bdf8, 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+    overflow: hidden !important;
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+/* Wrapper de cada item (se existir) */
+.st-key-massive_year_selector [data-testid="stSegmentedControlItem"] {
+    flex: 1 1 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    width: 100% !important;
+}
+
+/* Cada botão — flex: 1 direto pois pode ser filho do container ou do item */
+.st-key-massive_year_selector [data-testid="stBaseButton-segmented_control"],
+.st-key-massive_year_selector [data-testid="stBaseButton-segmented_controlActive"],
+.st-key-massive_year_selector button[kind="segmented_control"],
+.st-key-massive_year_selector button[kind="segmented_controlActive"] {
+    flex: none !important;
+    width: 100% !important;
+    height: 80px !important;
+    min-height: 80px !important;
+    min-width: 0 !important;
+    border-radius: 0 !important;
+    border: none !important;
+    border-right: 1px solid #334155 !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    transition: background-color 0.2s ease !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
+    position: relative !important;
     padding: 0 !important;
+    margin: 0 !important;
+    color: var(--text-muted) !important;
 }
 
-/* Alvo no PARÁGRAFO interno (onde o texto do ano reside) */
-.st-key-massive_year_selector div[data-testid="stBaseButton-segmented_control"] p {
-    font-size: 2.4rem !important;  /* Aumento definitivo do texto */
+.st-key-massive_year_selector button[kind="segmented_control"] > div,
+.st-key-massive_year_selector button[kind="segmented_controlActive"] > div,
+.st-key-massive_year_selector [data-testid="stBaseButton-segmented_control"] > div,
+.st-key-massive_year_selector [data-testid="stBaseButton-segmented_controlActive"] > div {
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    position: absolute !important;
+    inset: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+}
+
+/* Remove separador do último botão do grupo. */
+.st-key-massive_year_selector [data-baseweb="button-group"] > button:last-child,
+.st-key-massive_year_selector [data-baseweb="button-group"] > *:last-child [data-testid="stBaseButton-segmented_control"],
+.st-key-massive_year_selector [data-baseweb="button-group"] > *:last-child [data-testid="stBaseButton-segmented_controlActive"] {
+    border-right: none !important;
+    margin-right: 0 !important;
+}
+
+/* Texto do ano (parágrafo dentro do botão) */
+.st-key-massive_year_selector [data-testid="stBaseButton-segmented_control"] p,
+.st-key-massive_year_selector [data-testid="stBaseButton-segmented_controlActive"] p,
+.st-key-massive_year_selector [data-testid="stBaseButton-segmented_control"] [data-testid="stMarkdownContainer"] p,
+.st-key-massive_year_selector [data-testid="stBaseButton-segmented_controlActive"] [data-testid="stMarkdownContainer"] p,
+.st-key-massive_year_selector button[kind="segmented_control"] p,
+.st-key-massive_year_selector button[kind="segmented_controlActive"] p,
+.st-key-massive_year_selector button[kind="segmented_control"] span,
+.st-key-massive_year_selector button[kind="segmented_controlActive"] span {
+    font-size: 2.4rem !important;
     font-weight: 800 !important;
     line-height: 1 !important;
-    color: inherit !important;
+    color: var(--text-muted) !important;
     margin: 0 !important;
     padding: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    display: grid !important;
+    place-items: center !important;
+    text-align: center !important;
+    text-transform: none !important;
+    letter-spacing: 0 !important;
+    opacity: 1 !important;
 }
 
-/* Hover effect */
-.st-key-massive_year_selector div[data-testid="stBaseButton-segmented_control"]:hover {
-    transform: translateY(-5px) !important;
-    border-color: var(--accent-color) !important;
-    box-shadow: 0 12px 24px -6px rgba(0, 0, 0, 0.4) !important;
+/* Hover (inativo) */
+.st-key-massive_year_selector [data-testid="stBaseButton-segmented_control"]:hover,
+.st-key-massive_year_selector button[kind="segmented_control"]:hover {
+    background-color: rgba(56, 189, 248, 0.08) !important;
+    background-image: none !important;
+    transform: none !important;
+    box-shadow: none !important;
+    border-color: #334155 !important;
+    color: var(--accent-color) !important;
 }
 
-/* Estado Ativo (Selecionado) */
-.st-key-massive_year_selector div[data-testid="stBaseButton-segmented_control"][data-testid*="Active"],
-.st-key-massive_year_selector div[data-testid="stBaseButton-segmented_control"]:has(input:checked) {
-    background-color: var(--accent-color) !important;
-    border-color: var(--accent-color) !important;
-    box-shadow: 0 0 25px var(--accent-color-alpha) !important;
-    transform: scale(1.06) !important;
+.st-key-massive_year_selector [data-testid="stBaseButton-segmented_control"]:hover p,
+.st-key-massive_year_selector [data-testid="stBaseButton-segmented_control"]:hover [data-testid="stMarkdownContainer"] p,
+.st-key-massive_year_selector button[kind="segmented_control"]:hover p,
+.st-key-massive_year_selector button[kind="segmented_control"]:hover span {
+    color: var(--accent-color) !important;
 }
 
-.st-key-massive_year_selector div[data-testid="stBaseButton-segmented_control"][data-testid*="Active"] p {
+/* Estado Ativo — gradiente de preenchimento (igual ao card) */
+.st-key-massive_year_selector [data-testid="stBaseButton-segmented_controlActive"],
+.st-key-massive_year_selector button[kind="segmented_controlActive"] {
+    background-image: linear-gradient(135deg, #38bdf8 0%, #1e40af 100%) !important;
+    background-color: transparent !important;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+    transform: none !important;
+    color: #ffffff !important;
+}
+
+.st-key-massive_year_selector [data-testid="stBaseButton-segmented_controlActive"] p,
+.st-key-massive_year_selector [data-testid="stBaseButton-segmented_controlActive"] [data-testid="stMarkdownContainer"] p,
+.st-key-massive_year_selector button[kind="segmented_controlActive"] p,
+.st-key-massive_year_selector button[kind="segmented_controlActive"] span {
+    color: #ffffff !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3) !important;
+}
+
+.st-key-massive_year_selector [data-testid="stBaseButton-segmented_controlActive"]:hover,
+.st-key-massive_year_selector button[kind="segmented_controlActive"]:hover {
+    background-image: linear-gradient(135deg, #7dd3fc 0%, #3b82f6 100%) !important;
     color: #ffffff !important;
 }

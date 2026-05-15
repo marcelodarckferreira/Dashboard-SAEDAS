@@ -84,10 +84,12 @@ Quando houver solicitação de nova tabela de seleção, aplicar automaticamente
 
 ### Lei 1 — Independência da Tabela Mestre
 
-Tabelas que servem como **controles de seleção** (ex: Tabela de URGs na Home) **não podem** ser filtradas pela própria seleção que geram.
+Tabelas que servem como **controles de seleção** (ex: Tabela de URGs ou Tabela de Escolas) **não podem** ser filtradas pela própria seleção que geram.
 
 - **Correto:** A tabela de URGs exibe todas as URGs do ano selecionado, independente de quais estão marcadas.
 - **Errado:** Filtrar a tabela de URGs por `global_urgs` faria as linhas não selecionadas desaparecerem, impossibilitando a re-seleção.
+- **Correto:** A tabela de Escolas usa uma base sem filtro de Escola, mesmo quando uma escola já está marcada.
+- **Errado:** Filtrar a tabela de Escolas por `sidebar_escola_filter` faria as escolas não selecionadas desaparecerem.
 
 ```python
 # home.py — imunidade ao filtro de URG na tabela mestre
@@ -201,8 +203,10 @@ df, info = load_csv("data/DashboardHome.csv", expected_cols=SCHEMA_HOME)
 
 ```python
 {
-    "erros":   [],       # lista de strings — problemas fatais (arquivo ausente, schema inválido)
-    "alertas": [],       # lista de strings — avisos não-fatais (colunas extras, tipos divergentes)
+    "encoding_usado": "utf-8",   # encoding com que o arquivo foi lido (ou None se falhou)
+    "erros":          [],        # lista de strings — problemas fatais (arquivo ausente, leitura impossível)
+    "alertas":        [],        # lista de strings — avisos não-fatais (colunas estruturais ausentes)
+    "alertas_ano":    [],        # lista de strings — colunas de ano ausentes (ex.: "2026") — silencioso ao usuário
 }
 ```
 

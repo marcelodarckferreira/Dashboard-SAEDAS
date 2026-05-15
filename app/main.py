@@ -52,11 +52,13 @@ params = st.query_params
 menu_options_all = ["Início", "Encaminhamentos", "Exames", "Vacinação", "Nutrição", "Enfermagem", "Assistente Social", "Psicólogo", "Professor", "Médico", "Aluno"]
 
 # 1. Verifica se há um parâmetro de menu na URL
+menu_from_url = False
 menu_param = params.get("menu")
 if isinstance(menu_param, list): menu_param = menu_param[0]
 
 if menu_param in menu_options_all:
     st.session_state["menu_escolhido"] = menu_param
+    menu_from_url = True
 
 # 2. Lógica específica para Aluno (Busca automática)
 if "aluno" in params:
@@ -70,6 +72,7 @@ if "aluno" in params:
     if aluno_param:
         st.session_state["aluno_preselect"] = {"nome": aluno_param, "nasc": nasc_param}
     st.session_state["menu_escolhido"] = "Aluno"
+    menu_from_url = True
     
 # Limpa apenas os parâmetros de roteamento global processados para evitar loops, 
 # mas preserva parâmetros de filtro de página (como toggle_reg)
@@ -137,6 +140,12 @@ with st.sidebar:
     default_index = (
         menu_options.index(default_option) if default_option in menu_options else 0
     )
+    menu_key = "sidebar_main_menu"
+
+    def sync_sidebar_menu(key: str) -> None:
+        selected_menu = st.session_state.get(key)
+        if selected_menu in menu_options:
+            st.session_state["menu_escolhido"] = selected_menu
 
     menu_escolhido = option_menu(
         menu_title=None,
@@ -155,9 +164,15 @@ with st.sidebar:
             "person",
         ],
         default_index=default_index,
+        manual_select=default_index if menu_from_url else None,
         orientation="vertical",
+        key=menu_key,
+        on_change=sync_sidebar_menu,
     )
-    st.session_state["menu_escolhido"] = menu_escolhido
+    selected_menu = st.session_state.get(menu_key, menu_escolhido)
+    if selected_menu in menu_options:
+        menu_escolhido = selected_menu
+        st.session_state["menu_escolhido"] = selected_menu
 
 # O menu_escolhido final é determinado pelo option_menu ou pelo estado injetado acima
 

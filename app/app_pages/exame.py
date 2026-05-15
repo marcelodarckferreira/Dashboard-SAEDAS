@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 from components.footer_personal import footer_personal
 from components.sidebar_filters import sidebar_filters
 from app.utils.data_loader import load_csv
-from st_aggrid import GridOptionsBuilder, GridUpdateMode, JsCode
+from st_aggrid import GridUpdateMode, JsCode
 from app.utils.page_helpers import (
     filter_by_sidebar_selections,
     build_comparativo_anual,
@@ -22,9 +22,14 @@ from app.utils.page_helpers import (
     render_table_toolbar,
     render_saedas_aggrid,
 )
-from app.utils.state_manager import init_global_state, sync_home_to_sidebar
-from app.utils.schemas import SCHEMA_EXAME, SCHEMA_EXAME_ALUNO, SCHEMA_EXAME_ANO
-from app.utils.styles import apply_global_css, render_metric_cards, apply_saedas_design
+from app.utils.state_manager import (
+    apply_pending_table_filters,
+    init_global_state,
+    sync_sidebar_escola_selection,
+    sync_home_to_sidebar,
+)
+from app.utils.schemas import SCHEMA_EXAME, SCHEMA_EXAME_ALUNO, SCHEMA_EXAME_ANO, SCHEMA_HOME
+from app.utils.styles import render_metric_cards, apply_saedas_design
 
 
 def carregar_dados_exame():
@@ -39,10 +44,14 @@ def carregar_dados_exame():
     csv_file_ano = "data/DashboardExameAno.csv"
     df_ano, info_ano = load_csv(csv_file_ano, expected_cols=SCHEMA_EXAME_ANO)
 
+    csv_file_home = "data/DashboardHome.csv"
+    df_home, info_home = load_csv(csv_file_home, expected_cols=SCHEMA_HOME)
+
     return {
         "principal": {"df": df, "info": info, "csv": csv_file},
         "aluno": {"df": df_aluno_raw, "info": info_aluno, "csv": csv_file_aluno},
         "ano": {"df": df_ano, "info": info_ano, "csv": csv_file_ano},
+        "home": {"df": df_home, "info": info_home, "csv": csv_file_home},
     }
 
 
@@ -60,49 +69,7 @@ def page_exame():
     st.markdown(
         """
         <style>
-            .st-key-massive_year_selector {
-                margin-top: -1.5rem !important;
-                margin-bottom: 1rem !important;
-            }
-            .st-key-massive_year_selector button {
-                height: 56px !important;
-                min-width: 120px !important;
-                border-radius: 0 !important;
-                background-color: #1e293b !important;
-                border: 1px solid #334155 !important;
-                border-right: none !important;
-                transition: all 0.3s ease !important;
-                margin: 0 !important;
-            }
-            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:first-of-type button,
-            .st-key-massive_year_selector button:first-of-type {
-                border-radius: 10px 0 0 10px !important;
-            }
-            .st-key-massive_year_selector div[data-testid="stSegmentedControlItem"]:last-of-type button,
-            .st-key-massive_year_selector button:last-of-type {
-                border-radius: 0 10px 10px 0 !important;
-                border-right: 1px solid #334155 !important;
-            }
-            .st-key-massive_year_selector button p,
-            .st-key-massive_year_selector button span {
-                font-size: 1.85rem !important;
-                font-weight: 700 !important;
-                color: #f8fafc !important;
-                line-height: 1 !important;
-                margin: 0 !important;
-                padding: 0 !important;
-            }
-            .st-key-massive_year_selector button[data-testid*="Active"],
-            .st-key-massive_year_selector button[aria-pressed="true"] {
-                background-color: #3b82f6 !important;
-                border-color: #60a5fa !important;
-                box-shadow: none !important;
-            }
-            .st-key-massive_year_selector button[data-testid*="Active"] p,
-            .st-key-massive_year_selector button[aria-pressed="true"] p {
-                color: #ffffff !important;
-            }
-            .home-metric-label {
+.home-metric-label {
                 font-size: 0.78rem !important;
                 font-weight: 700 !important;
                 color: #94a3b8 !important;
@@ -240,6 +207,7 @@ def page_exame():
     df_aluno_raw, info_aluno = datasets["aluno"]["df"], datasets["aluno"]["info"]
     csv_file_ano = datasets["ano"]["csv"]
     df_ano, info_ano = datasets["ano"]["df"], datasets["ano"]["info"]
+    df_home, info_home = datasets["home"]["df"], datasets["home"]["info"]
 
     if info_aluno["erros"]:
         st.warning(f"Falha ao ler '{csv_file_aluno}': " + "; ".join(info_aluno["erros"]))
@@ -260,6 +228,10 @@ def page_exame():
     if info["alertas"]:
         st.warning("; ".join(info["alertas"]))
 
+    if info_home["erros"]:
+        st.error(f"Erro ao carregar dados demográficos: {'; '.join(info_home['erros'])}")
+        df_home = pd.DataFrame()
+
     df = df.rename(
         columns={
             "Ano": "Ano",
@@ -276,21 +248,11 @@ def page_exame():
         df_aluno["DataNascimento"] = pd.to_datetime(df_aluno["DataNascimento"], errors="coerce")
 
     st.sidebar.title("Filtros - Exames")
-    pending_table_urgs = st.session_state.pop("pending_sidebar_urg_filter", None)
-    if pending_table_urgs is not None:
-        st.session_state["sidebar_urg_filter"] = pending_table_urgs
-    pending_table_escolas = st.session_state.pop("pending_sidebar_escola_filter", None)
-    if pending_table_escolas is not None:
-        st.session_state["sidebar_escola_filter"] = pending_table_escolas
+    apply_pending_table_filters()
 
     df_filt_sidebar, selections = sidebar_filters(df, {"ano": True, "urg": True, "escola": True, "tipo": True})
 
-    current_sidebar_escolas = list(st.session_state.get("sidebar_escola_filter", []))
-    prev_sidebar_escolas = list(st.session_state.get("_prev_sidebar_escola_filter", []))
-    if set(map(str, current_sidebar_escolas)) != set(map(str, prev_sidebar_escolas)):
-        st.session_state["last_interaction_source"] = "sidebar"
-        st.session_state["escola_table_selection_exame__selected_values"] = current_sidebar_escolas
-    st.session_state["_prev_sidebar_escola_filter"] = current_sidebar_escolas
+    sync_sidebar_escola_selection("escola_table_selection_exame")
 
     current_year = datetime.datetime.now().year
     years_options = sorted([current_year - i for i in range(5)], reverse=True)
@@ -306,7 +268,7 @@ def page_exame():
     selected_years_comp = st.session_state["global_years"]
 
     regulacao_col = "Regulacao"
-    regulacoes_disponiveis = sorted(df_filt_sidebar[regulacao_col].dropna().unique()) if regulacao_col in df_filt_sidebar.columns else []
+    regulacoes_disponiveis = sorted(df[regulacao_col].dropna().unique()) if regulacao_col in df.columns else []
     regulacoes_selecionadas = st.sidebar.multiselect(
         "Selecione a(s) Regulação(ões):",
         options=regulacoes_disponiveis,
@@ -342,9 +304,15 @@ def page_exame():
         df_master_filtrado = df_master_no_reg.copy()
 
     df_filt = df_master_filtrado.copy()
+    
+    # df_filt_no_escola: Ignora filtro de ESCOLA, mas mantém Ano, URG e Tipo (Sidebar)
     df_filt_no_escola = df_base_sem_escola.copy()
     if current_urgs:
         df_filt_no_escola = df_filt_no_escola[df_filt_no_escola["URG"].isin(current_urgs)]
+    
+    # df_filt_no_urg_no_escola: Ignora URG e ESCOLA (usado para a tabela mestra de URG)
+    df_filt_no_urg_no_escola = df_base_sem_escola.copy()
+
     df_filt_no_reg = df_master_no_reg.copy()
 
     if regulacoes_selecionadas:
@@ -390,8 +358,22 @@ def page_exame():
     csv = df_filt.to_csv(index=False, sep=";").encode("utf-8")
     st.sidebar.download_button("Exportar CSV (Exame)", data=csv, file_name="dados_filtrados_exame.csv", mime="text/csv")
 
-    total_qtd = df_filt["Quantidade"].sum() if not df_filt.empty else 0
-    render_metric_cards([{"label": "TOTAL DE REGULAÇÕES (EXAMES)", "value": total_qtd}])
+    # --- Cálculo de Métricas Demográficas (Vindas da Home) ---
+    df_home_filt = filter_by_sidebar_selections(df_home, selections)
+    if not df_home_filt.empty:
+        total_alunos_escola = df_home_filt["QtdAlunoEscola"].sum()
+        total_alunos_atendidos = df_home_filt["QtdAluno"].sum()
+    else:
+        total_alunos_escola = 0
+        total_alunos_atendidos = 0
+
+    # TOTAL DE EXAMES deve ignorar o filtro de Regulação (conforme solicitado: indicadores gerais não filtram por tipo)
+    total_qtd = df_filt_no_reg["Quantidade"].sum() if not df_filt_no_reg.empty else 0
+    render_metric_cards([
+        {"label": "TOTAL DE ALUNOS", "value": total_alunos_escola},
+        {"label": "ALUNOS ATENDIDOS", "value": total_alunos_atendidos},
+        {"label": "TOTAL DE EXAMES", "value": total_qtd}
+    ])
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
 
     regulacoes_sum = (
@@ -421,7 +403,7 @@ def page_exame():
     # --- NOVO: Tabela Comparativa de Performance por ANO (Exames) ---
     st.subheader("Tabela Comparativa de Performance por ANO (Exames)")
     df_cmp_ano_perf = build_comparativo_anual(
-        df_filt,
+        df_filt_no_reg,
         "Regulacao",
         value_col="Quantidade",
         pct_label="Total",
@@ -501,16 +483,6 @@ def page_exame():
             key="ano_perf_table_exame_aggrid",
             incluir_total=bool(ano_perf_footer),
             min_height=140,
-            custom_css={
-                ".ag-header-cell.saedas-aggrid-left-header .ag-header-cell-label": {
-                    "justify-content": "flex-start !important",
-                    "text-align": "left !important",
-                },
-                ".ag-header-cell.saedas-aggrid-left-header .ag-header-cell-text": {
-                    "text-align": "left !important",
-                    "width": "auto !important",
-                },
-            },
         )
         st.markdown("</div>", unsafe_allow_html=True)
         st.caption(
@@ -525,24 +497,22 @@ def page_exame():
     st.subheader("Performance por URG")
     st.caption("Nota: Clique em qualquer linha de URG para filtrar o restante do dashboard. Esta tabela é sensível apenas ao filtro de Ano.")
 
-    df_for_urg_table = df.copy()
-    if selected_years_comp:
-        df_for_urg_table = df_for_urg_table[df_for_urg_table["Ano"].isin(selected_years_comp)]
+    # Tabela de Performance por URG: IMUNE ao filtro de URG (mostra tudo para permitir seleção)
+    df_for_urg_table = df_filt_no_urg_no_escola.copy()
+    
+    # Mas respeita o filtro de Regulação
+    if regulacoes_selecionadas:
+        df_for_urg_table = df_for_urg_table[df_for_urg_table["Regulacao"].isin(regulacoes_selecionadas)]
 
-    current_selected_urgs = st.session_state.get("global_urgs", [])
-    df_cmp_urg = build_comparativo_anual(df_for_urg_table, "URG", active_row_value=current_selected_urgs)
+    df_cmp_urg = build_comparativo_anual(df_for_urg_table, "URG", active_row_value=current_urgs)
 
     if df_cmp_urg is not None:
         df_cmp_urg_aggrid, column_defs, column_map = prepare_comparativo_aggrid_data(df_cmp_urg)
         df_cmp_urg_body, footer_rows = split_aggrid_footer(df_cmp_urg_aggrid)
         urg_field = next((f for f, col in column_map.items() if col == "URG" or col == ("URG", "")), None)
 
-        pre_selected_rows = []
-        if urg_field and current_selected_urgs:
-            pre_selected_rows = [idx for idx, val in enumerate(df_cmp_urg_body[urg_field].tolist()) if val in current_selected_urgs]
-
-        selected_urgs_js = json.dumps(list(map(str, current_selected_urgs)))
-        urg_field_js = json.dumps(urg_field)
+        selected_urgs_js = json.dumps(list(map(str, current_urgs)))
+        urg_field_js = json.dumps(urg_field) if urg_field else "null"
         sync_selection_js = JsCode(f"""
             function(params) {{
                 const selectedUrgs = new Set({selected_urgs_js});
@@ -562,33 +532,46 @@ def page_exame():
             "rowMultiSelectWithClick": True,
             "pinnedBottomRowData": footer_rows,
             "onFirstDataRendered": sync_selection_js,
-            "onRowDataUpdated": sync_selection_js,
         }
-        if pre_selected_rows:
-            grid_options["initialState"] = {"rowSelection": pre_selected_rows}
 
         df_cmp_urg_export = pd.concat([df_cmp_urg_body, pd.DataFrame(footer_rows)], ignore_index=True) if footer_rows else df_cmp_urg_body.copy()
         with st.container(key="exame_urg_actions_toolbar"):
             render_table_toolbar(df_cmp_urg_export, "performance_urg_exame.csv", "urg_table_exame")
 
+        _urg_key_sel = "_".join(sorted(map(str, current_urgs))) if current_urgs else "none"
+        urg_table_key = f"urg_table_exame_{_urg_key_sel}"
+        _urg_key_changed = st.session_state.get("_prev_urg_table_key_exame") != urg_table_key
+        st.session_state["_prev_urg_table_key_exame"] = urg_table_key
         st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
         aggrid_response = render_saedas_aggrid(
             df_cmp_urg_body,
             grid_options=grid_options,
-            key=f"urg_table_exame_{hash(str(current_selected_urgs))}",
+            key=urg_table_key,
             update_mode=GridUpdateMode.SELECTION_CHANGED,
             incluir_total=bool(footer_rows),
         )
         st.markdown("</div>", unsafe_allow_html=True)
 
-        selected_rows = aggrid_response.get("selected_rows", None)
-        if selected_rows is not None and urg_field:
-            if isinstance(selected_rows, pd.DataFrame):
-                selected_rows = selected_rows.to_dict(orient="records")
-            elif isinstance(selected_rows, dict):
-                selected_rows = [selected_rows]
-            new_selected_urgs = [row.get(urg_field) for row in selected_rows if row.get(urg_field) and row.get(urg_field) != "TOTAL"]
-            if set(new_selected_urgs) != set(current_selected_urgs):
+        # AgGrid pode retornar None quando não há seleção, tratamos como lista vazia []
+        selected_rows_raw = aggrid_response.get("selected_rows")
+        selected_rows = []
+        if selected_rows_raw is not None:
+            if isinstance(selected_rows_raw, pd.DataFrame):
+                selected_rows = selected_rows_raw.to_dict(orient="records")
+            elif isinstance(selected_rows_raw, dict):
+                selected_rows = [selected_rows_raw]
+            else:
+                selected_rows = list(selected_rows_raw)
+
+        if not _urg_key_changed and urg_field:
+            new_selected_urgs = [
+                row.get(urg_field) 
+                for row in selected_rows 
+                if row.get(urg_field) and str(row.get(urg_field)) != "TOTAL"
+            ]
+            
+            # Sincronização Granular: Se houver mudança (inclusive para lista vazia), propaga para a sidebar
+            if set(map(str, new_selected_urgs)) != set(map(str, current_urgs)):
                 st.session_state["global_urgs"] = new_selected_urgs
                 st.session_state["pending_sidebar_urg_filter"] = new_selected_urgs
                 st.session_state["last_interaction_source"] = "table"
@@ -596,8 +579,13 @@ def page_exame():
     else:
         st.info("Dados insuficientes para gerar a tabela de performance.")
 
+    # Top Escolas: deve respeitar o filtro de Regulação
+    df_for_top_escolas = df_filt_no_escola.copy()
+    if regulacoes_selecionadas:
+        df_for_top_escolas = df_for_top_escolas[df_for_top_escolas["Regulacao"].isin(regulacoes_selecionadas)]
+
     render_top_por_urg(
-        df_filt_no_escola[df_filt_no_escola["Ano"].isin(selected_years_comp)] if not df_filt_no_escola.empty else pd.DataFrame(),
+        df_for_top_escolas[df_for_top_escolas["Ano"].isin(selected_years_comp)] if not df_for_top_escolas.empty else pd.DataFrame(),
         "Quantidade",
         "Principais Escolas por URG",
         "Escola",
@@ -608,13 +596,13 @@ def page_exame():
 
     escolas_tabela_atual = st.session_state.get("escola_table_selection_exame__selected_values", [])
     current_sidebar_escolas = st.session_state.get("sidebar_escola_filter", [])
-    last_source = st.session_state.get("last_interaction_source", "")
-    if last_source != "sidebar" and set(map(str, escolas_tabela_atual)) != set(map(str, current_sidebar_escolas)):
+    
+    # Sincronismo tabela -> sidebar: removida restrição rígida de last_source para permitir limpeza total
+    if set(map(str, escolas_tabela_atual)) != set(map(str, current_sidebar_escolas)):
         st.session_state["pending_sidebar_escola_filter"] = escolas_tabela_atual
-        st.session_state["last_interaction_source"] = "table"
+        st.session_state["last_interaction_source"] = "table_escola"
         st.rerun()
-    elif last_source == "sidebar":
-        st.session_state["last_interaction_source"] = ""
+    st.session_state["last_interaction_source"] = ""
 
     render_section_divider()
 
@@ -623,7 +611,7 @@ def page_exame():
     render_section_divider()
 
     st.subheader("Distribuição por Regulação")
-    render_grouped_bar_anual(df_filt, "Quantidade", "", x_col="Regulacao", orientation="h")
+    render_grouped_bar_anual(df_filt_no_reg, "Quantidade", "", x_col="Regulacao", orientation="h")
 
     render_section_divider()
     st.subheader("Detalhamento por Aluno")

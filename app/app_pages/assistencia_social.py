@@ -22,6 +22,7 @@ from app.utils.page_helpers import (
     render_saedas_aggrid,
     split_aggrid_footer,
     render_table_toolbar,
+    render_aluno_detalhamento_aggrid,
 )
 from app.utils.state_manager import (
     apply_pending_table_filters,
@@ -492,7 +493,7 @@ def page_assistencia_social():
 
         _urg_key_sel = "_".join(sorted(map(str, current_selected_urgs))) if current_selected_urgs else "none"
         urg_table_key = f"urg_table_assistencia_social_{_urg_key_sel}"
-        _urg_key_changed = st.session_state.get("_prev_urg_table_key_assistencia_social") != urg_table_key
+        _urg_key_changed = st.session_state.get("_is_page_first_run") or (st.session_state.get("_prev_urg_table_key_assistencia_social") != urg_table_key)
         st.session_state["_prev_urg_table_key_assistencia_social"] = urg_table_key
         st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
         aggrid_response = render_saedas_aggrid(
@@ -732,26 +733,12 @@ def page_assistencia_social():
                 preview_limit = 500
                 df_aluno_head = df_aluno_final.head(preview_limit).reset_index(drop=True)
 
-                # Aplicar design padrão (Zebra, Hover, etc)
-                styled_aluno = (
-                    df_aluno_head.style.pipe(apply_saedas_design, categoria_col="Aluno")
-                    .set_properties(**{"text-align": "left"})
-                    .hide(axis="index")
-                )
-
-                with st.container(key="assistencia_social_aluno_actions_toolbar"):
-                    render_table_toolbar(df_aluno_head, "detalhes_alunos_assistencia_social.csv", "aluno_table_assistencia_social")
-
-                st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
-                st.dataframe(
-                    styled_aluno,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Perfil": st.column_config.LinkColumn(
-                            "Perfil", display_text="📄 Ver Perfil"
-                        )
-                    },
+                # Renderização da tabela de alunos usando AgGrid padronizado com Toolbar integrada
+                render_aluno_detalhamento_aggrid(
+                    df_aluno_head, 
+                    key="aluno_table_assistencia_social",
+                    csv_name="detalhes_alunos_assistencia_social.csv",
+                    toolbar_key="assistencia_social_aluno_actions_toolbar"
                 )
                 st.markdown("</div>", unsafe_allow_html=True)
             else:

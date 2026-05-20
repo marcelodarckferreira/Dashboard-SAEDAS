@@ -298,36 +298,50 @@ def page_aluno():
     total_registros = len(df_filtrado)
     
     #st.markdown("---")
+    # Injeta CSS local para garantir que os links dos cards não tenham sublinhado
+    st.markdown("""
+        <style>
+            .home-metric-link-wrapper, .home-metric-link-wrapper:hover {
+                text-decoration: none !important;
+            }
+            .home-metric-link:hover {
+                text-decoration: none !important;
+            }
+            /* Adiciona espaçamento vertical entre as linhas de cards */
+            div[data-testid="stColumn"] {
+                margin-bottom: 15px !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.subheader("Indicadores Gerais")
-    render_metric("Total de registros", total_registros)
-
-    # Exibição unificada de indicadores por categoria
-
+    
+    # 1. Card de Total em grade de 5 colunas (para manter paridade de largura)
+    render_metric_cards([{"label": "Total de registros", "value": total_registros}], fixed_columns=5)
+    
+    # 2. Demais cards em grade de 5 colunas
     cat_order = [
-        ("Encaminhamento", "Encaminhamento"),
-        ("Exame", "Exame"),
-        ("Vacinação", "Vacinação"),
-        ("Nutrição", "Nutrição"),
-        ("Médico", "Médico"),
-        ("Enfermagem", "Enfermagem"),
-        ("Professor", "Professor"),
-        ("Psicólogo", "Psicólogo"),
-        ("Assistência Social", "Assist. Social"),
+        ("Encaminhamento", "Encaminhamento", "#encaminhamentos"),
+        ("Exame", "Exame", "#exames"),
+        ("Vacinação", "Vacinação", "#vacinacao"),
+        ("Nutrição", "Nutrição", "#nutricao"),
+        ("Médico", "Médico", "#medico"),
+        ("Enfermagem", "Enfermagem", "#enfermagem"),
+        ("Professor", "Professor", "#professor"),
+        ("Psicólogo", "Psicólogo", "#psicologo"),
+        ("Assistência Social", "Assist. Social", "#assistencia_social"),
     ]
-    linha_categorias = [
-        (label, tot_por_cat.get(cat_key, 0)) for cat_key, label in cat_order
-    ]
-    # Exibe os indicadores por categoria em grid, seguindo o padrão da página de nutrição.
-    cols_per_row = 4
-    for start in range(0, len(linha_categorias), cols_per_row):
-        slice_cards = linha_categorias[start : start + cols_per_row]
-        cols = st.columns(cols_per_row)
-        for col, card in zip(cols, slice_cards):
-            with col:
-                render_metric_cards([card])
+    
+    linha_categorias = []
+    for cat_key, label, link in cat_order:
+        val = tot_por_cat.get(cat_key, 0)
+        linha_categorias.append({"label": label, "value": val, "link": link})
+
+    # Exibe os indicadores de categoria em uma grade de 5 colunas com estilo Premium (Blue Glow)
+    render_metric_cards(linha_categorias, fixed_columns=5)
 
     st.markdown("---")
-    st.subheader("Evolução nutricional do aluno")
+    st.subheader("Evolução nutricional do aluno", anchor="nutricao_evolucao")
     nutri_evol = df_filtrado[df_filtrado["Categoria"] == "Nutrição"].dropna(
         subset=["Ano"]
     )
@@ -335,6 +349,8 @@ def page_aluno():
         st.info("Sem dados nutricionais para o período filtrado.")
     else:
         nutri_evol["Ano"] = nutri_evol["Ano"].astype(int)
+        if "Classificação" in nutri_evol.columns:
+            nutri_evol["Classificação"] = nutri_evol["Classificação"].astype(str).str.strip()
         for col in ["Peso", "Altura", "IMC"]:
             if col in nutri_evol.columns:
                 nutri_evol[col] = pd.to_numeric(nutri_evol[col], errors="coerce")
@@ -377,42 +393,37 @@ def page_aluno():
                 )
                 tabela_metricas["Tipo"] = "Métrica"
 
-                classif_por_ano = (
-                    nutri_evol.dropna(subset=["Classificação", "Ano"])
-                    .groupby(["Classificação", "Ano"])
-                    .size()
-                    .reset_index(name="Quantidade")
-                )
-                ordem_classif = [
-                    "DESNUTRIÇÃO AGUDA GRAVE",
-                    "DESNUTRIÇÃO AGUDA MODERADA",
-                    "NORMAL",
-                    "Não Classificado",
-                    "OBESIDADE",
-                    "SOBREPESO",
-                ]
+                # Nova lógica: Uma única linha de Classificação com o texto do status
                 tabela_classif = (
-                    classif_por_ano.pivot(
-                        index="Classificação", columns="Ano", values="Quantidade"
-                    )
-                    .fillna(0)
-                    .sort_index(axis=1)
+                    nutri_evol.dropna(subset=["Classificação", "Ano"])
+                    .sort_values("Ano")
+                    .groupby("Ano")["Classificação"]
+                    .last()  # Pega a última classificação registrada no ano
                     .reset_index()
-                    .rename(columns={"Classificação": "Item"})
                 )
-                tabela_classif["Tipo"] = "Classificação"
-                tabela_classif = tabela_classif.set_index("Item").reindex(
-                    ordem_classif
-                ).reset_index()
+                
+                if not tabela_classif.empty:
+                    # Transpõe os dados: Anos viram colunas e Classificações viram valores da linha
+                    tabela_classif = (
+                        tabela_classif.set_index("Ano")["Classificação"]
+                        .to_frame()
+                        .T
+                        .reset_index(drop=True)
+                    )
+                    tabela_classif["Item"] = "Classificação"
+                    tabela_classif["Tipo"] = "Classificação"
+                else:
+                    tabela_classif = pd.DataFrame(columns=["Item", "Tipo"])
 
                 if tabela_metricas.empty and tabela_classif.empty:
-                    st.info("Sem dados nutricionais para a tabela por ano.")
+                    st.info("Sem dados nutricionais para the tabela por ano.")
                 else:
-                    anos_cols = sorted(
-                        set(tabela_metricas.columns)
-                        .union(tabela_classif.columns)
-                        .difference({"Item", "Tipo"})
-                    )
+                    # Identifica todos os anos presentes em ambas as tabelas
+                    anos_metricas = [c for c in tabela_metricas.columns if c not in ["Item", "Tipo"]]
+                    anos_classif = [c for c in tabela_classif.columns if c not in ["Item", "Tipo"]]
+                    anos_cols = sorted(list(set(anos_metricas) | set(anos_classif)))
+
+                    # Garante que ambas as tabelas tenham todas as colunas de anos
                     for df_temp in (tabela_metricas, tabela_classif):
                         for ano_col in anos_cols:
                             if ano_col not in df_temp.columns:
@@ -424,9 +435,11 @@ def page_aluno():
                             tabela_classif[["Tipo", "Item"] + anos_cols],
                         ],
                         ignore_index=True,
-                    ).fillna(0)
+                    ).fillna("-")
                     tabela_comb = tabela_comb.rename(columns={"Item": "Métrica/Classe"})
-                    # Oculta linhas com todas as colunas de ano iguais a zero (aplica a classificações)
+                    
+                    # Oculta linhas apenas para métricas vazias. 
+                    # Para Classificação, mantemos todas as linhas conforme solicitado para mostrar o perfil completo.
                     soma_anos = (
                         tabela_comb[anos_cols]
                         .apply(pd.to_numeric, errors="coerce")
@@ -434,9 +447,11 @@ def page_aluno():
                         .sum(axis=1)
                     )
                     tabela_comb = tabela_comb[
-                        (tabela_comb["Tipo"] == "Métrica") | (soma_anos != 0)
+                        (tabela_comb["Tipo"] == "Classificação") | (soma_anos != 0)
                     ]
                     tabela_comb = tabela_comb.drop(columns=["Tipo"], errors="ignore")
+                    # Converte nomes de colunas de ano para string para evitar formatador de milhar no cabeçalho
+                    tabela_comb.columns = [str(c) for c in tabela_comb.columns]
                     st.dataframe(
                         tabela_comb,
                         use_container_width=True,
@@ -444,7 +459,7 @@ def page_aluno():
                     )
 
     st.markdown("---")
-    st.subheader("Categorias por ano")
+    st.subheader("Categorias por ano", anchor="categorias_por_ano")
     categorias_ano = (
         df_filtrado.dropna(subset=["Ano"])
         .groupby(["Categoria", "Ano"])
@@ -460,13 +475,23 @@ def page_aluno():
             .fillna(0)
             .astype(int)
         )
+        # Converte nomes de colunas para string para evitar formatador de milhar
+        pivot_categorias.columns = [str(c) for c in pivot_categorias.columns]
         st.dataframe(pivot_categorias, use_container_width=True)
 
     def render_section(
         df_base: pd.DataFrame, titulo: str, extra_cols: list[str] | None = None
     ):
+        # Gera anchor ASCII-friendly
+        import unicodedata
+        anchor_val = titulo.lower().replace(" ", "_")
+        anchor_val = "".join(
+            c for c in unicodedata.normalize('NFD', anchor_val)
+            if unicodedata.category(c) != 'Mn'
+        )
+
         st.markdown("---")
-        st.subheader(titulo)
+        st.subheader(titulo, anchor=anchor_val)
         if df_base.empty:
             st.info(f"Nenhum dado de {titulo.lower()} para exibir.")
             return
@@ -491,6 +516,10 @@ def page_aluno():
             df_base[cols_to_show].sort_values(sort_cols, na_position="last"),
             use_container_width=True,
             hide_index=True,
+            column_config={
+                "Ano": st.column_config.NumberColumn(format="%d"),
+                "ID": st.column_config.NumberColumn(format="%d"),
+            }
         )
 
     render_section(

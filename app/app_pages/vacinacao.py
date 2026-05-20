@@ -25,6 +25,7 @@ from app.utils.page_helpers import (
     split_aggrid_footer,
     render_table_toolbar,
     render_saedas_aggrid,
+    render_aluno_detalhamento_aggrid
 )
 from app.utils.state_manager import (
     apply_pending_table_filters,
@@ -32,6 +33,7 @@ from app.utils.state_manager import (
     sync_sidebar_escola_selection,
     sync_home_to_sidebar,
     sync_home_urg_to_sidebar,
+    sync_local_vacinacao_vacina
 )
 from app.utils.schemas import (
     SCHEMA_VACINACAO,
@@ -74,6 +76,8 @@ def page_vacinacao():
         st.session_state["vacinacao_vacina_multiselect"] = (
             toggle_multiselect_value(current, vac_name)
         )
+        # Sincroniza com a chave persistente
+        st.session_state["persistent_vacinacao_vacina"] = st.session_state["vacinacao_vacina_multiselect"]
 
     st.title("Visão Geral da Vacinação")
     st.markdown(
@@ -347,12 +351,17 @@ def page_vacinacao():
         else []
     )
     
+    # Restaura o estado persistente caso o Streamlit tenha podado a chave do widget na navegação
+    if "vacinacao_vacina_multiselect" not in st.session_state:
+        st.session_state["vacinacao_vacina_multiselect"] = st.session_state.get("persistent_vacinacao_vacina", [])
+
     # Filtro de Vacina (Sincronizado entre Sidebar e Botões KPI)
     vacinas_selecionadas = st.sidebar.multiselect(
         "Selecione a(s) Vacina(s):",
         options=vacinas_disponiveis,
         placeholder="Todas",
-        key="vacinacao_vacina_multiselect"
+        key="vacinacao_vacina_multiselect",
+        on_change=sync_local_vacinacao_vacina
     )
 
     # 4. Filtro de Vacina (Aplicação Final para o restante do dashboard)
@@ -425,15 +434,7 @@ def page_vacinacao():
     )
 
     st.sidebar.markdown("---")
-    st.sidebar.subheader("Exportar dados")
-    csv_export_encoding = "utf-8"
-    csv = df_filt.to_csv(index=False, sep=";").encode(csv_export_encoding)
-    st.sidebar.download_button(
-        label="Exportar CSV (Vacinação)",
-        data=csv,
-        file_name="dados_filtrados_vacinacao.csv",
-        mime="text/csv",
-    )
+    
     
     # 1. Indicador principal (Alunos Vacinados / Doses Aplicadas) - GLOBAL
     # Calcula alunos únicos vacinados a partir do df_aluno (Respeita filtros de Ano/URG/Escola, mas IGNORE Vacina)
@@ -504,7 +505,7 @@ def page_vacinacao():
 
     st.subheader("Tabela Comparativa de Performance por ANO (Vacinação)")
     df_cmp_vacina = build_comparativo_anual(
-        df_filt_no_vac,
+        df_filt,
         "Vacina",
         value_col="Quantidade",
         pct_label="Total",
@@ -643,9 +644,11 @@ def page_vacinacao():
         with st.container(key="vacinacao_urg_actions_toolbar"):
             render_table_toolbar(df_cmp_urg_export, "performance_urg_vacinacao.csv", "urg_table_vacinacao")
 
+        _years_key = "_".join(sorted(map(str, selected_years_comp))) if selected_years_comp else "all"
+        _vac_key_sel = "_".join(sorted(map(str, vacinas_selecionadas))) if vacinas_selecionadas else "all"
         _urg_key_sel = "_".join(sorted(map(str, current_selected_urgs))) if current_selected_urgs else "none"
-        urg_table_key = f"urg_table_vacinacao_{_urg_key_sel}"
-        _urg_key_changed = st.session_state.get("_prev_urg_table_key_vacinacao") != urg_table_key
+        urg_table_key = f"urg_table_vacinacao_{_years_key}_{_vac_key_sel}_{_urg_key_sel}"
+        _urg_key_changed = st.session_state.get("_is_page_first_run") or (st.session_state.get("_prev_urg_table_key_vacinacao") != urg_table_key)
         st.session_state["_prev_urg_table_key_vacinacao"] = urg_table_key
         st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
         aggrid_response = render_saedas_aggrid(
@@ -710,12 +713,6 @@ def page_vacinacao():
         st.rerun()
     st.session_state["last_interaction_source"] = ""
 
-    render_top_por_urg(
-        df_filt_no_vac[df_filt_no_vac["Ano"].isin(selected_years_comp)] if not df_filt_no_vac.empty else pd.DataFrame(),
-        "Quantidade",
-        "Principais Vacinas por URG",
-        "Vacina"
-    )
 
     st.markdown("---")
 
@@ -726,7 +723,7 @@ def page_vacinacao():
 
     # --- DISTRIBUIÇÃO POR TIPO DE VACINA (GRÁFICO AGRUPADO) ---
     st.subheader("Distribuição por Tipo de Vacina")
-    render_grouped_bar_anual(df_filt_no_vac, "Quantidade", "", x_col="Vacina", orientation="h")
+    render_grouped_bar_anual(df_filt, "Quantidade", "", x_col="Vacina", orientation="h")
 
     render_section_divider()
     st.subheader("Detalhamento por Aluno")
@@ -879,40 +876,14 @@ def page_vacinacao():
                 df_aluno_final = df_aluno_final[col_order].fillna("")
                 # Renomear coluna Menu para Perfil para exibição
                 df_aluno_final = df_aluno_final.rename(columns={"Menu": "Perfil"})
-                preview_limit = 500
-                df_aluno_head = df_aluno_final.head(preview_limit).reset_index(drop=True)
 
-                # Aplicar design padrão (Zebra, Hover, etc)
-                styled_aluno = (
-                    df_aluno_head.style.pipe(apply_saedas_design, categoria_col="Aluno")
-                    .set_properties(**{"text-align": "left"})
-                    .hide(axis="index")
+                # Renderização da tabela de alunos usando AgGrid padronizado com Toolbar integrada
+                render_aluno_detalhamento_aggrid(
+                    df_aluno_final, 
+                    key="aluno_table_vacinacao",
+                    csv_name="detalhes_alunos_vacinacao.csv",
+                    toolbar_key="vacinacao_aluno_actions_toolbar"
                 )
-
-                st.dataframe(
-                    styled_aluno,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Perfil": st.column_config.LinkColumn(
-                            "Perfil", display_text="📄 Ver Perfil"
-                        )
-                    },
-                )
-            else:
-                st.info("Nenhum registro detalhado para exibir.")
-            if total_registros_aluno > preview_limit:
-                st.info(
-                    f"Exibindo apenas as primeiras {preview_limit} linhas de {total_registros_aluno}."
-                )
-
-            csv_aluno = df_aluno_filtrado.to_csv(index=False, sep=";").encode("utf-8")
-            st.download_button(
-                label="Exportar CSV (Vacinacao por aluno)",
-                data=csv_aluno,
-                file_name="dados_filtrados_vacinacao_aluno.csv",
-                mime="text/csv",
-            )
 
     st.markdown(" ")
     footer_personal()

@@ -36,40 +36,39 @@ AUTO_ID_COLUMN = "::auto_unique_id::"
 EXCLUDED_EXPORT_COLUMNS = [AUTO_ID_COLUMN]
 
 
+from app.utils.redis_client import redis_cache
+
 def carregar_dados_home():
-    """Carrega todos os 4 datasets da Home com tratamento de erros."""
-    csv_file = "data/DashboardHome.csv"
-    df, info = load_csv(csv_file, expected_cols=SCHEMA_HOME)
-
-    csv_file_escola_ano = "data/DashboardHomeEscolaAno.csv"
-    df_escola_ano, info_escola_ano = load_csv(
-        csv_file_escola_ano, expected_cols=SCHEMA_HOME_ESCOLA_ANO
-    )
-
-    csv_file_home_ano = "data/DashboardHomeAno.csv"
-    df_home_ano, info_home_ano = load_csv(
-        csv_file_home_ano, expected_cols=SCHEMA_HOME_ANO
-    )
-
-    csv_file_urg_ano = "data/DashboardHomeURGAno.csv"
-    df_urg_ano, info_urg_ano = load_csv(
-        csv_file_urg_ano, expected_cols=SCHEMA_HOME_URG_ANO
-    )
-
-    return {
-        "home": {"df": df, "info": info, "csv": csv_file},
-        "escola_ano": {
-            "df": df_escola_ano,
-            "info": info_escola_ano,
-            "csv": csv_file_escola_ano,
-        },
-        "home_ano": {
-            "df": df_home_ano,
-            "info": info_home_ano,
-            "csv": csv_file_home_ano,
-        },
-        "urg_ano": {"df": df_urg_ano, "info": info_urg_ano, "csv": csv_file_urg_ano},
+    """Carrega todos os 4 datasets da Home com suporte a cache Redis."""
+    keys = {
+        "home": ("saedas:home:dataset:main", "data/DashboardHome.csv", SCHEMA_HOME),
+        "escola_ano": ("saedas:home:dataset:escola", "data/DashboardHomeEscolaAno.csv", SCHEMA_HOME_ESCOLA_ANO),
+        "home_ano": ("saedas:home:dataset:ano", "data/DashboardHomeAno.csv", SCHEMA_HOME_ANO),
+        "urg_ano": ("saedas:home:dataset:urg", "data/DashboardHomeURGAno.csv", SCHEMA_HOME_URG_ANO),
     }
+
+    results = {}
+    
+    for key_id, (redis_key, csv_path, schema) in keys.items():
+        # Tenta recuperar do Redis verificando se o CSV no disco mudou
+        df = redis_cache.get_dataframe_with_timestamp(redis_key, csv_path)
+        
+        if df is not None:
+            results[key_id] = {
+                "df": df, 
+                "info": {"encoding_usado": "Redis (Cache)", "erros": [], "alertas": [], "alertas_ano": []}, 
+                "csv": csv_path
+            }
+        else:
+            # Fallback para o disco (CSV) se o cache não existir ou estiver obsoleto
+            df, info = load_csv(csv_path, expected_cols=schema)
+            results[key_id] = {"df": df, "info": info, "csv": csv_path}
+            
+            # Atualiza o Redis com o novo dado e o novo timestamp
+            if not df.empty:
+                redis_cache.set_dataframe_with_timestamp(redis_key, df, csv_path)
+
+    return results
 
 
 def page_home():
@@ -259,7 +258,7 @@ def page_home():
 
 
     # --- Filtros na Sidebar ---
-    home_filter_config = {"ano": True, "urg": True, "escola": True, "tipo": False}
+    home_filter_config = {"ano": True, "urg": True, "escola": True, "tipo": True}
 
     apply_pending_table_filters()
 
@@ -305,7 +304,8 @@ def page_home():
     # 3. Filtro de URGs (Global - Vinculação Bidirecional Tabela/Sidebar)
     current_urgs = st.session_state["global_urgs"]
     if current_urgs:
-        df_master_filtrado = df_base_final[df_base_final["URG"].isin(current_urgs)]
+        df_base_final = df_base_final[df_base_final["URG"].isin(current_urgs)]
+        df_master_filtrado = df_base_final.copy()
         if len(current_urgs) == 1:
             st.info(f"📍 Filtrando por URG selecionada: **{current_urgs[0]}**")
         else:
@@ -313,6 +313,12 @@ def page_home():
     else:
         # Se vazio (Todos), mantém o df base (já filtrado por escola e ano)
         df_master_filtrado = df_base_final.copy()
+
+    # 4. Filtro de Tipo (Instituição)
+    if selections.get("tipo"):
+        all_types = set(df["Tipo"].dropna().unique()) if "Tipo" in df.columns else set()
+        if set(selections["tipo"]) != all_types:
+            df_master_filtrado = df_master_filtrado[df_master_filtrado["Tipo"].isin(selections["tipo"])]
 
     # --- Geração do filtro_titulo Dinâmico (Data-Driven UI) ---
     def get_filter_display_string_for_title(selected_items_list, all_available_items_list):
@@ -331,8 +337,9 @@ def page_home():
     anos_str = get_filter_display_string_for_title(selected_years_comp, all_years_for_title)
     urgs_str = get_filter_display_string_for_title(current_urgs_for_title, all_urgs_for_title)
     escolas_str = get_filter_display_string_for_title(current_escolas_for_title, all_escolas_for_title)
+    tipos_str = get_filter_display_string_for_title(selections.get("tipo", []), sorted(list(df["Tipo"].dropna().unique())) if "Tipo" in df.columns else [])
     
-    filtro_titulo = f"Anos: {anos_str} / URGs: {urgs_str} / Escolas: {escolas_str}"
+    filtro_titulo = f"Anos: {anos_str} / URGs: {urgs_str} / Escolas: {escolas_str} / Tipos: {tipos_str}"
 
     st.markdown(f"### Indicadores Gerais ({filtro_titulo})")
 
@@ -347,6 +354,7 @@ def page_home():
                 ("ano", "Ano", "Ano"),
                 ("urg", "URG", "URG"),
                 ("escola", "Escola", "Escola"),
+                ("tipo", "Tipo", "Tipo"),
             ],
         )
     )
@@ -763,17 +771,13 @@ def page_home():
         )
         grid_options["onFirstDataRendered"] = sync_urg_selection_js
 
-        # Chave dinâmica: muda quando a seleção muda, forçando re-mount e onFirstDataRendered.
-        # Isso sincroniza sidebar→grid sem usar onRowDataUpdated (que dispara em todo rerun e
-        # causa re-seleção indevida quando o usuário está desselecionando).
+        # Monitoramos se houve mudança de seleção vinda da sidebar (Detecta se o key mudou neste render)
+        _years_key = "_".join(sorted(map(str, selected_years_comp))) if selected_years_comp else "all"
         _urg_key_sel = "_".join(sorted(map(str, current_selected_urgs))) if current_selected_urgs else "none"
-        urg_grid_key = f"urg_home_aggrid_{_urg_key_sel}"
+        urg_grid_key = f"urg_home_aggrid_{_years_key}_{_urg_key_sel}"
         
-        # Monitoramos se houve mudança de seleção vinda da sidebar
-        sidebar_urg_filter = st.session_state.get("sidebar_urg_filter", [])
-        urg_key_changed = set(map(str, st.session_state.get("_prev_urg_filter_val") or [])) != set(map(str, sidebar_urg_filter))
-        st.session_state["_prev_urg_filter_val"] = sidebar_urg_filter
-        st.session_state["_prev_urg_grid_key"] = urg_grid_key
+        _urg_key_changed = st.session_state.get("_is_page_first_run") or (st.session_state.get("_prev_urg_grid_key_home") != urg_grid_key)
+        st.session_state["_prev_urg_grid_key_home"] = urg_grid_key
 
         with st.container():
             df_cmp_urg_export = (
@@ -807,7 +811,7 @@ def page_home():
             else:
                 selected_rows = list(selected_rows_raw)
 
-        if not urg_key_changed:
+        if not _urg_key_changed:
             if urg_field:
                 selected_urgs = [
                     str(row.get(urg_field))
@@ -910,15 +914,14 @@ def page_home():
                 render_table_toolbar(df_cmp_escola_export, "comparativo_escola_home.csv", "home_escola_table")
             st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
 
-            # Chave dinâmica: re-monta quando a seleção muda, acionando onFirstDataRendered.
+            _years_key = "_".join(sorted(map(str, selected_years_comp))) if selected_years_comp else "all"
+            _urgs_key = "_".join(sorted(map(str, current_selected_urgs))) if current_selected_urgs else "all"
             _escola_key_sel = "_".join(sorted(map(str, selected_escolas_sidebar))) if selected_escolas_sidebar else "none"
-            escola_grid_key = f"escola_home_aggrid_{_escola_key_sel}"
+            escola_grid_key = f"escola_home_aggrid_{_years_key}_{_urgs_key}_{_escola_key_sel}"
 
             # Monitoramos se houve mudança de seleção vinda da sidebar
-            sidebar_escola_val = st.session_state.get("sidebar_escola_filter", [])
-            escola_key_changed = set(map(str, st.session_state.get("_prev_escola_filter_val") or [])) != set(map(str, sidebar_escola_val))
-            st.session_state["_prev_escola_filter_val"] = sidebar_escola_val
-            st.session_state["_prev_escola_grid_key"] = escola_grid_key
+            _escola_key_changed = st.session_state.get("_is_page_first_run") or (st.session_state.get("_prev_escola_grid_key_home") != escola_grid_key)
+            st.session_state["_prev_escola_grid_key_home"] = escola_grid_key
 
             escola_aggrid_response = render_saedas_aggrid(
                 df_cmp_escola_body,
@@ -941,7 +944,7 @@ def page_home():
                 else:
                     escola_selected_rows = list(escola_selected_rows_raw)
 
-            if not escola_key_changed:
+            if not _escola_key_changed:
                 if escola_field:
                     selected_escolas = [
                         row.get(escola_field)
@@ -2447,27 +2450,7 @@ def page_home():
 
         st.sidebar.markdown("---")
 
-        st.sidebar.subheader("Exportar dados")
-
-        csv_export_encoding = "utf-8"
-
-        # df_for_export is the detailed data *without* the total row
-
-        df_for_export_clean = df_for_export.drop(
-            columns=EXCLUDED_EXPORT_COLUMNS, errors="ignore"
-        )
-
-        csv_data = df_for_export_clean.to_csv(index=False, sep=";").encode(
-            csv_export_encoding
-        )
-
-        st.sidebar.download_button(
-            label="Exportar CSV (Detalhado)",
-            data=csv_data,
-            file_name="dados_detalhados_home.csv",
-            mime="text/csv",
-            key="download_csv_home_detalhado",
-        )
+        
 
         if not df_display.empty:
             st.markdown(

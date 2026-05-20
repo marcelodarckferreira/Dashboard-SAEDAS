@@ -1,16 +1,31 @@
 import streamlit as st
 import datetime
 import pandas as pd
+import os
 
 # Silencia avisos de downcasting do Pandas 2.2+ (FutureWarning)
 pd.set_option('future.no_silent_downcasting', True)
 
+def get_max_year_from_data():
+    """Tenta obter o maior ano disponível no dataset principal da Home."""
+    try:
+        # Caminho relativo ao diretório raiz da aplicação
+        csv_path = "app/data/DashboardHome.csv"
+        if os.path.exists(csv_path):
+            # Lemos apenas a coluna Ano para ser performático
+            df_temp = pd.read_csv(csv_path, sep=';', usecols=['Ano'])
+            if not df_temp.empty:
+                return int(df_temp['Ano'].max())
+    except Exception:
+        pass
+    return datetime.datetime.now().year
+
 def init_global_state():
     """Inicializa as chaves do session_state se não existirem."""
-    current_year = datetime.datetime.now().year
-    
     if "global_years" not in st.session_state:
-        st.session_state["global_years"] = [current_year]
+        # O único valor default permitido em todo o dashboard é o do maior ano disponível
+        max_year = get_max_year_from_data()
+        st.session_state["global_years"] = [max_year]
         
     if "global_urgs" not in st.session_state:
         st.session_state["global_urgs"] = []
@@ -33,6 +48,20 @@ def init_global_state():
 
     if "_prev_escola_filter_val" not in st.session_state:
         st.session_state["_prev_escola_filter_val"] = st.session_state["sidebar_escola_filter"]
+
+    # --- Persistência de Filtros Locais (Evita poda do Streamlit na navegação) ---
+    # Todos os filtros locais devem iniciar vazios (equivalente a "Todos")
+    if "persistent_consulta_encaminhamento" not in st.session_state:
+        st.session_state["persistent_consulta_encaminhamento"] = []
+    
+    if "persistent_vacinacao_vacina" not in st.session_state:
+        st.session_state["persistent_vacinacao_vacina"] = []
+
+    if "persistent_exame_regulacao" not in st.session_state:
+        st.session_state["persistent_exame_regulacao"] = []
+
+    if "persistent_nutricao_situacao" not in st.session_state:
+        st.session_state["persistent_nutricao_situacao"] = []
 
 def sync_sidebar_to_home():
     """Callback disparada quando a sidebar muda (Anos)."""
@@ -90,3 +119,16 @@ def sync_sidebar_escola_selection(table_key: str):
         st.session_state[f"{table_key}__selected_values"] = current_sidebar_escolas
 
     st.session_state[previous_state_key] = current_sidebar_escolas
+
+# --- Callbacks de Sincronização de Filtros Locais ---
+def sync_local_consulta_encaminhamento():
+    st.session_state["persistent_consulta_encaminhamento"] = st.session_state["consulta_encaminhamento_multiselect"]
+
+def sync_local_vacinacao_vacina():
+    st.session_state["persistent_vacinacao_vacina"] = st.session_state["vacinacao_vacina_multiselect"]
+
+def sync_local_exame_regulacao():
+    st.session_state["persistent_exame_regulacao"] = st.session_state["exame_regulacao_multiselect"]
+
+def sync_local_nutricao_situacao():
+    st.session_state["persistent_nutricao_situacao"] = st.session_state["nutricao_situacao_multiselect"]

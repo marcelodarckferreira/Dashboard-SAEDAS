@@ -19,13 +19,15 @@ from app.utils.page_helpers import (
     prepare_comparativo_aggrid_data,
     split_aggrid_footer,
     render_table_toolbar,
-    render_saedas_aggrid
+    render_saedas_aggrid,
+    render_aluno_detalhamento_aggrid
 )
 from app.utils.state_manager import (
     apply_pending_table_filters,
     init_global_state,
     sync_sidebar_escola_selection,
     sync_home_to_sidebar,
+    sync_local_consulta_encaminhamento
 )
 from app.utils.schemas import (
     SCHEMA_CONSULTA,
@@ -36,27 +38,35 @@ from app.utils.schemas import (
 from app.utils.styles import render_metric_cards, apply_saedas_design
 
 
+from app.utils.redis_client import redis_cache
+
 def carregar_dados_consulta():
-    csv_file = "data/DashboardConsulta.csv"
-    df, info = load_csv(csv_file, expected_cols=SCHEMA_CONSULTA)
-
-    csv_file_aluno = "data/DashboardConsultaAluno.csv"
-    df_aluno_raw, info_aluno = load_csv(
-        csv_file_aluno, expected_cols=SCHEMA_CONSULTA_ALUNO
-    )
-
-    csv_file_ano = "data/DashboardConsultaAno.csv"
-    df_ano, info_ano = load_csv(csv_file_ano, expected_cols=SCHEMA_CONSULTA_ANO)
-
-    csv_file_home = "data/DashboardHome.csv"
-    df_home, info_home = load_csv(csv_file_home, expected_cols=SCHEMA_HOME)
-
-    return {
-        "principal": {"df": df, "info": info, "csv": csv_file},
-        "aluno": {"df": df_aluno_raw, "info": info_aluno, "csv": csv_file_aluno},
-        "ano": {"df": df_ano, "info": info_ano, "csv": csv_file_ano},
-        "home": {"df": df_home, "info": info_home, "csv": csv_file_home},
+    """Carrega os datasets da página Consulta com suporte a cache Redis."""
+    keys = {
+        "principal": ("saedas:consulta:dataset:main", "data/DashboardConsulta.csv", SCHEMA_CONSULTA),
+        "aluno": ("saedas:consulta:dataset:aluno", "data/DashboardConsultaAluno.csv", SCHEMA_CONSULTA_ALUNO),
+        "ano": ("saedas:consulta:dataset:ano", "data/DashboardConsultaAno.csv", SCHEMA_CONSULTA_ANO),
+        "home": ("saedas:home:dataset:main", "data/DashboardHome.csv", SCHEMA_HOME),
     }
+
+    results = {}
+    for key_id, (redis_key, csv_path, schema) in keys.items():
+        # Tenta recuperar do Redis verificando se o CSV no disco mudou
+        df = redis_cache.get_dataframe_with_timestamp(redis_key, csv_path)
+        
+        if df is not None:
+            results[key_id] = {
+                "df": df,
+                "info": {"encoding_usado": "Redis (Cache)", "erros": [], "alertas": [], "alertas_ano": []},
+                "csv": csv_path
+            }
+        else:
+            # Fallback para o disco se o cache for inválido ou ausente
+            df, info = load_csv(csv_path, expected_cols=schema)
+            results[key_id] = {"df": df, "info": info, "csv": csv_path}
+            if not df.empty:
+                redis_cache.set_dataframe_with_timestamp(redis_key, df, csv_path)
+    return results
 
 
 def page_consulta():
@@ -65,6 +75,8 @@ def page_consulta():
         st.session_state["consulta_encaminhamento_multiselect"] = (
             toggle_multiselect_value(current, reg_name)
         )
+        # Sincroniza com a chave persistente
+        st.session_state["persistent_consulta_encaminhamento"] = st.session_state["consulta_encaminhamento_multiselect"]
 
     # Inicializa o estado global sincronizado (Anos e URGs)
     init_global_state()
@@ -399,12 +411,17 @@ def page_consulta():
         else []
     )
     
+    # Restaura o estado persistente caso o Streamlit tenha podado a chave do widget na navegação
+    if "consulta_encaminhamento_multiselect" not in st.session_state:
+        st.session_state["consulta_encaminhamento_multiselect"] = st.session_state.get("persistent_consulta_encaminhamento", [])
+
     # Filtro de Encaminhamento (Sincronizado entre Sidebar e Botões KPI)
     encaminhamentos_selecionados = st.sidebar.multiselect(
         "Selecione o(s) Encaminhamento(s):",
         options=encaminhamentos_disponiveis,
         placeholder="Todos",
-        key="consulta_encaminhamento_multiselect"
+        key="consulta_encaminhamento_multiselect",
+        on_change=sync_local_consulta_encaminhamento
     )
 
     # 4. Filtro de Encaminhamento (Aplicação Final para o restante do dashboard)
@@ -477,15 +494,7 @@ def page_consulta():
     )
 
     st.sidebar.markdown("---")
-    st.sidebar.subheader("Exportar dados")
-    csv_export_encoding = "utf-8"
-    csv = df_filt.to_csv(index=False, sep=";").encode(csv_export_encoding)
-    st.sidebar.download_button(
-        label="Exportar CSV (Consulta)",
-        data=csv,
-        file_name="dados_filtrados_consulta.csv",
-        mime="text/csv",
-    )
+    
     
     # --- Cálculo de Indicadores de Alunos (Sincronizado) ---
     df_home = datasets["home"]["df"]
@@ -689,9 +698,11 @@ def page_consulta():
             render_table_toolbar(df_cmp_urg_export, "performance_urg_consulta.csv", "urg_table_consulta")
 
         # Detecta se o key mudou neste render (instância nova = resposta stale, ignorar)
+        _years_key = "_".join(sorted(map(str, selected_years_comp))) if selected_years_comp else "all"
+        _enc_key_sel = "_".join(sorted(map(str, encaminhamentos_selecionados))) if encaminhamentos_selecionados else "all"
         _urg_key_sel = "_".join(sorted(map(str, current_selected_urgs))) if current_selected_urgs else "none"
-        urg_table_key = f"urg_table_consulta_{_urg_key_sel}"
-        _urg_key_changed = st.session_state.get("_prev_urg_table_key_consulta") != urg_table_key
+        urg_table_key = f"urg_table_consulta_{_years_key}_{_enc_key_sel}_{_urg_key_sel}"
+        _urg_key_changed = st.session_state.get("_is_page_first_run") or (st.session_state.get("_prev_urg_table_key_consulta") != urg_table_key)
         st.session_state["_prev_urg_table_key_consulta"] = urg_table_key
 
         st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
@@ -926,40 +937,17 @@ def page_consulta():
                 df_aluno_final = df_aluno_final[col_order].fillna("")
                 # Renomear coluna Menu para Perfil para exibição
                 df_aluno_final = df_aluno_final.rename(columns={"Menu": "Perfil"})
-                preview_limit = 500
-                df_aluno_head = df_aluno_final.head(preview_limit).reset_index(drop=True)
-
-                # Aplicar design padrão (Zebra, Hover, etc)
-                styled_aluno = (
-                    df_aluno_head.style.pipe(apply_saedas_design, categoria_col="Aluno")
-                    .set_properties(**{"text-align": "left"})
-                    .hide(axis="index")
-                )
-
-                # Barra de ferramentas
-                with st.container(key="consulta_aluno_actions_toolbar"):
-                    render_table_toolbar(df_aluno_head, "detalhes_alunos_consulta.csv", "aluno_table_consulta")
-
-                st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
-                st.dataframe(
-                    styled_aluno,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Perfil": st.column_config.LinkColumn(
-                            "Perfil", display_text="📄 Ver Perfil"
-                        )
-                    },
+                # Renderização da tabela de alunos usando AgGrid padronizado com Toolbar integrada
+                render_aluno_detalhamento_aggrid(
+                    df_aluno_final, 
+                    key="aluno_table_consulta",
+                    csv_name="detalhes_alunos_consulta.csv",
+                    toolbar_key="consulta_aluno_actions_toolbar"
                 )
                 st.markdown('</div>', unsafe_allow_html=True)
             else:
                 st.info("Nenhum registro detalhado para exibir.")
             
-            # Remover o download_button manual que existia no final
-            if total_registros_aluno > preview_limit:
-                st.info(
-                    f"Exibindo apenas as primeiras {preview_limit} linhas de {total_registros_aluno}."
-                )
 
     st.markdown(" ")
     footer_personal()

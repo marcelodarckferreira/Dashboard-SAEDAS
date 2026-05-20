@@ -1,12 +1,16 @@
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import streamlit.components.v1 as components
 import re
 import numpy as np
 import json
-from st_aggrid import JsCode, AgGrid, GridUpdateMode
+from urllib.parse import parse_qs, urlparse
+from st_aggrid import JsCode, AgGrid, GridUpdateMode, GridOptionsBuilder
 
 from app.utils.styles import render_metric_cards, apply_saedas_design
+
+PROFILE_URL_MARKER = "__SAEDAS_PROFILE_URL__"
 
 
 def toggle_multiselect_value(current_selection: list | None, value) -> list:
@@ -454,7 +458,7 @@ def render_top_por_urg(df, value_col, titulo, label_col, table_key=None, active_
             table_key_changed = False
             if table_key:
                 table_state_key = f"{table_key}__aggrid_key"
-                table_key_changed = st.session_state.get(table_state_key) != aggrid_key
+                table_key_changed = st.session_state.get("_is_page_first_run") or (st.session_state.get(table_state_key) != aggrid_key)
                 st.session_state[table_state_key] = aggrid_key
 
             aggrid_response = render_saedas_aggrid(
@@ -597,6 +601,8 @@ def build_comparativo_anual(
         .pivot(index=categoria_col, columns="Ano", values=value_col)
         .fillna(0)
     )
+    # Evita 'mixed type' nas colunas (int para anos, str para variações/totais)
+    pivot.columns = pivot.columns.astype(str)
     
     # Ordenação especial para URGs
     if categoria_col == "URG":
@@ -608,43 +614,47 @@ def build_comparativo_anual(
     if pivot.empty:
         return None
 
-    year_cols = sorted([int(c) for c in pivot.columns if pd.notna(c)])
-    pivot["Total"] = pivot[year_cols].sum(axis=1)
+    # Já convertemos para str no pivot, então year_cols devem ser strings para indexação
+    # mas mantemos uma lista de ints para cálculos de Var% e rótulos.
+    year_cols_str = sorted([c for c in pivot.columns if str(c).isdigit()], key=lambda x: int(x))
+    year_cols_int = [int(c) for c in year_cols_str]
+    
+    pivot["Total"] = pivot[year_cols_str].sum(axis=1)
     df_cmp = pivot.reset_index()
 
     # Cálculos anuais: % Cobertura ou % Total
-    for year in year_cols:
-        pct_col_name = f"% {pct_label} {year % 100:02d}"
+    for y_str, y_int in zip(year_cols_str, year_cols_int):
+        pct_col_name = f"% {pct_label} {y_int % 100:02d}"
         
         if denominator_row_label:
             # Padrão Cobertura: denominador é uma linha específica (ex: TOTAL DE ALUNOS)
-            valor_base = df_cmp.loc[df_cmp[categoria_col] == denominator_row_label, year].values
+            valor_base = df_cmp.loc[df_cmp[categoria_col] == denominator_row_label, y_str].values
             total_ref = valor_base[0] if len(valor_base) > 0 else 0
         else:
             # Padrão Total: denominador é a soma da coluna
-            total_ref = df_cmp[year].sum()
+            total_ref = df_cmp[y_str].sum()
             
-        df_cmp[pct_col_name] = (df_cmp[year] / total_ref * 100) if total_ref > 0 else 0
+        df_cmp[pct_col_name] = (df_cmp[y_str] / total_ref * 100) if total_ref > 0 else 0
 
     # Cálculos interanuais: Var% em relação ao ano anterior
-    for prev, curr in zip(year_cols, year_cols[1:]):
-        var_pct_col = f"Var% {curr % 100:02d}-{prev % 100:02d}"
-        diff = df_cmp[curr] - df_cmp[prev]
-        df_cmp[var_pct_col] = (diff / df_cmp[prev].replace({0: pd.NA}) * 100)
-
-    # Renomeia anos para string
-    df_cmp = df_cmp.rename(columns={y: str(y) for y in year_cols})
-    year_cols_str = [str(y) for y in year_cols]
+    for i in range(1, len(year_cols_int)):
+        prev_str, curr_str = year_cols_str[i-1], year_cols_str[i]
+        prev_int, curr_int = year_cols_int[i-1], year_cols_int[i]
+        
+        var_pct_col = f"Var% {curr_int % 100:02d}-{prev_int % 100:02d}"
+        diff = df_cmp[curr_str] - df_cmp[prev_str]
+        df_cmp[var_pct_col] = (diff / df_cmp[prev_str].replace({0: pd.NA}) * 100)
 
     # Ordenação das colunas
     col_order = [categoria_col]
-    for i, curr_year in enumerate(year_cols):
-        col_order.append(str(curr_year))
-        col_order.append(f"% {pct_label} {curr_year % 100:02d}")
+    for i, y_str in enumerate(year_cols_str):
+        y_int = year_cols_int[i]
+        col_order.append(y_str)
+        col_order.append(f"% {pct_label} {y_int % 100:02d}")
         
         if i > 0:
-            prev_year = year_cols[i - 1]
-            col_order.append(f"Var% {curr_year % 100:02d}-{prev_year % 100:02d}")
+            prev_int = year_cols_int[i - 1]
+            col_order.append(f"Var% {y_int % 100:02d}-{prev_int % 100:02d}")
 
     if "Total" in df_cmp.columns:
         col_order.append("Total")
@@ -708,31 +718,35 @@ def calcular_altura_aggrid(
 ) -> int:
     """
     Calcula a altura ideal para uma tabela AgGrid, adaptando-se ao conteúdo 
-    até um teto máximo para manter a ergonomia da página.
+    até um teto dinâmico.
     """
-    APPROX_ROW_HEIGHT = 34
-    APPROX_HEADER_HEIGHT = 36
-    SAFETY_PADDING = 6
+    APPROX_ROW_HEIGHT = 32 # Reduzido para maior compacidade
+    APPROX_HEADER_HEIGHT = 35
+    SAFETY_PADDING = 5
 
-    if not isinstance(df, pd.DataFrame):
-        return APPROX_HEADER_HEIGHT + SAFETY_PADDING
+    # Altura mínima padrão: 5 linhas (mesmo que a tabela esteja vazia)
+    MIN_ROWS = 5
+    
+    if not isinstance(df, pd.DataFrame) or df.empty:
+        return APPROX_HEADER_HEIGHT + (MIN_ROWS * APPROX_ROW_HEIGHT) + SAFETY_PADDING
 
     num_data_rows = len(df)
     
-    # Lógica Inteligente:
-    # 1. Se o usuário definiu um limite (ex: paginação), respeitamos.
-    # 2. Se for "Todas", adaptamos ao conteúdo, mas limitamos ao max_rows (teto de 20 por padrão).
+    # 1. Se o usuário definiu um limite numérico fixo, usamos ele.
+    # 2. Se for "Todas" ou None, usamos o número real de linhas, mas limitamos ao max_rows.
     if isinstance(limite_linhas, int) and limite_linhas > 0:
         num_rows_to_display = min(num_data_rows, limite_linhas)
     else:
         num_rows_to_display = min(num_data_rows, max_rows)
 
+    # Garante que mostramos pelo menos 5 linhas visualmente (evita tabelas 'achatadas')
+    num_rows_to_display = max(num_rows_to_display, MIN_ROWS)
+
     data_height = num_rows_to_display * APPROX_ROW_HEIGHT
     total_row_height = APPROX_ROW_HEIGHT if incluir_total and num_data_rows > 0 else 0
     grid_height = APPROX_HEADER_HEIGHT + data_height + total_row_height + SAFETY_PADDING
     
-    min_height = APPROX_HEADER_HEIGHT + (APPROX_ROW_HEIGHT if incluir_total else 0) + SAFETY_PADDING
-    return max(grid_height, min_height)
+    return grid_height
 
 
 def prepare_comparativo_aggrid_data(
@@ -859,6 +873,9 @@ def render_saedas_aggrid(
     2. Estilização padrão do Design System (Headers e Footers).
     3. Configurações otimizadas de performance e layout.
     """
+    # Garante que nomes de colunas sejam strings (evita erros de AgGrid com tipos mistos)
+    df_data.columns = df_data.columns.astype(str)
+
     # 1. Cálculo Automático da Altura
     grid_height = calcular_altura_aggrid(
         df_data, 
@@ -902,17 +919,25 @@ def render_saedas_aggrid(
     if isinstance(extra_custom_css, dict):
         custom_css.update(extra_custom_css)
 
-    # 3. Renderização
+    # 3. Converte dicionário CSS para string (st-aggrid espera string)
+    css_string = ""
+    for selector, props in custom_css.items():
+        css_string += f"{selector} {{ "
+        for prop, val in props.items():
+            css_string += f"{prop}: {val}; "
+        css_string += "} "
+
+    # 4. Renderização
     return AgGrid(
         df_data,
         gridOptions=grid_options,
         height=grid_height,
         update_mode=update_mode,
-        allow_unsafe_jscode=kwargs.get("allow_unsafe_jscode", True),
+        allow_unsafe_jscode=True, # Forçado True para garantir renderização de botões HTML
         fit_columns_on_grid_load=kwargs.get("fit_columns_on_grid_load", True),
         theme=kwargs.get("theme", "streamlit"),
         key=key,
-        custom_css=custom_css,
+        custom_css=css_string,
         **{k: v for k, v in kwargs.items() if k not in ["custom_css", "allow_unsafe_jscode", "fit_columns_on_grid_load", "theme"]}
     )
 
@@ -1136,3 +1161,303 @@ def render_table_toolbar(
         )
 
     return leading_action_clicked
+
+
+def prepare_profile_action_column(df: pd.DataFrame) -> pd.DataFrame:
+    """Prepare a visible profile action label while keeping the URL in a hidden column."""
+    df_grid = df.copy()
+    if "Perfil" in df_grid.columns:
+        df_grid["_PerfilUrl"] = df_grid["Perfil"]
+        df_grid["Perfil"] = df_grid["Perfil"].apply(
+            lambda value: (
+                f"👤 Ver Perfil {PROFILE_URL_MARKER}{value}"
+                if str(value or "").strip()
+                else ""
+            )
+        )
+    return df_grid
+
+
+def get_profile_url_from_aggrid_event(event_data) -> str | None:
+    """Extract the hidden profile URL from an AgGrid cellClicked event."""
+    if not isinstance(event_data, dict):
+        return None
+
+    col_def = event_data.get("colDef") or {}
+    column = event_data.get("column") or {}
+    clicked_field = (
+        col_def.get("field")
+        or col_def.get("colId")
+        or column.get("field")
+        or column.get("colId")
+    )
+    if clicked_field != "Perfil":
+        return None
+
+    row_data = event_data.get("data") or {}
+    perfil_url = row_data.get("_PerfilUrl")
+    if not perfil_url:
+        return None
+
+    return str(perfil_url)
+
+
+def build_profile_click_return_js() -> str:
+    """Return custom collector JS that extracts profile URL from cell clicks."""
+    return """
+        function({streamlitRerunEventTriggerName, eventData}) {
+            if (streamlitRerunEventTriggerName !== 'cellClicked') {
+                return {profileUrl: null};
+            }
+
+            const colDef = eventData && eventData.colDef ? eventData.colDef : {};
+            const column = eventData && eventData.column ? eventData.column : {};
+            const field = colDef.field || colDef.colId || column.field || column.colId ||
+                (column.getColId ? column.getColId() : null);
+            const rowData = eventData && eventData.data ? eventData.data : {};
+            const profileUrl = field === 'Perfil' ? rowData._PerfilUrl : null;
+
+            return {profileUrl: profileUrl};
+        }
+    """
+
+
+def build_profile_link_cell_renderer_js() -> str:
+    """Return an AgGrid cell renderer that opens the student profile as a native link."""
+    return """
+        function(params) {
+            const profileUrl = params && params.data ? params.data._PerfilUrl : '';
+            if (!profileUrl) {
+                return '';
+            }
+
+            const cell = params.eGridCell || params.eParentOfValue;
+            if (cell) {
+                cell.title = 'Abrir perfil do aluno';
+                cell.setAttribute('role', 'link');
+                cell.setAttribute('aria-label', 'Abrir perfil do aluno');
+                cell.onclick = function(event) {
+                    event.stopPropagation();
+                    window.parent.location.href = profileUrl;
+                };
+            }
+
+            return '👤 Ver Perfil';
+        }
+    """
+
+
+def build_profile_cell_click_navigation_js() -> str:
+    """Return an AgGrid click handler that routes profile clicks in the parent page."""
+    return """
+        function(params) {
+            if (!params || !params.colDef || params.colDef.field !== 'Perfil') {
+                return;
+            }
+
+            const profileUrl = params.data ? params.data._PerfilUrl : null;
+            if (!profileUrl) {
+                return;
+            }
+
+            window.parent.location.href = profileUrl;
+        }
+    """
+
+
+def get_profile_url_from_aggrid_response(aggrid_response) -> str | None:
+    """Extract profile URL from the custom AgGrid response."""
+    if aggrid_response is None:
+        return None
+
+    profile_url = aggrid_response.get("profileUrl") if hasattr(aggrid_response, "get") else None
+    return str(profile_url) if profile_url else None
+
+
+def get_profile_url_from_aggrid_selection(aggrid_response) -> str | None:
+    """Extract profile URL from the selected AgGrid row."""
+    if aggrid_response is None or not hasattr(aggrid_response, "selected_rows"):
+        return None
+
+    selected_rows = aggrid_response.selected_rows
+    if selected_rows is None or selected_rows.empty or "_PerfilUrl" not in selected_rows.columns:
+        return None
+
+    profile_url = selected_rows.iloc[0].get("_PerfilUrl")
+    return str(profile_url) if profile_url else None
+
+
+def render_profile_click_bridge() -> None:
+    """Attach click handlers to rendered AgGrid profile cells."""
+    components.html(
+        """
+        <script>
+        (function() {
+            function bindProfileCells() {
+                const parentDocument = window.parent.document;
+                parentDocument.querySelectorAll('iframe').forEach(function(frame) {
+                    let frameDocument = null;
+                    try {
+                        frameDocument = frame.contentDocument || frame.contentWindow.document;
+                    } catch (error) {
+                        return;
+                    }
+                    if (!frameDocument) {
+                        return;
+                    }
+
+                    frameDocument.querySelectorAll('.ag-row').forEach(function(row) {
+                        const profileCell = row.querySelector('.ag-cell[col-id="Perfil"]');
+                        const urlCell = row.querySelector('.ag-cell[col-id="_PerfilUrl"]');
+                        if (!profileCell) {
+                            return;
+                        }
+
+                        const marker = '__SAEDAS_PROFILE_URL__';
+                        const profileText = profileCell.textContent || '';
+                        const urlFromProfileCell = profileText.includes(marker)
+                            ? profileText.split(marker).pop().trim()
+                            : '';
+                        const profileUrl = urlFromProfileCell || (
+                            urlCell ? (urlCell.textContent || '').trim() : ''
+                        );
+                        if (!profileUrl || profileCell.dataset.saedasProfileBound === '1') {
+                            return;
+                        }
+
+                        profileCell.dataset.saedasProfileBound = '1';
+                        profileCell.dataset.saedasProfileUrl = profileUrl;
+                        profileCell.innerHTML = '';
+                        const link = frameDocument.createElement('a');
+                        const appLocation = parentDocument.location;
+                        const appBaseUrl = appLocation.origin + appLocation.pathname;
+                        link.href = appBaseUrl + profileUrl;
+                        link.target = '_top';
+                        link.textContent = '👤 Ver Perfil';
+                        link.title = 'Abrir perfil do aluno';
+                        link.setAttribute('aria-label', 'Abrir perfil do aluno');
+                        link.style.display = 'inline-flex';
+                        link.style.alignItems = 'center';
+                        link.style.justifyContent = 'center';
+                        link.style.height = '26px';
+                        link.style.padding = '0 10px';
+                        link.style.borderRadius = '6px';
+                        link.style.border = '1px solid rgba(96, 165, 250, 0.45)';
+                        link.style.background = 'rgba(96, 165, 250, 0.12)';
+                        link.style.color = '#60a5fa';
+                        link.style.fontWeight = '700';
+                        link.style.textDecoration = 'none';
+                        link.style.whiteSpace = 'nowrap';
+                        profileCell.appendChild(link);
+                    });
+                });
+            }
+
+            bindProfileCells();
+            const intervalId = window.setInterval(bindProfileCells, 500);
+            window.setTimeout(function() {
+                window.clearInterval(intervalId);
+            }, 15000);
+        })();
+        </script>
+        """,
+        height=0,
+        width=0,
+    )
+
+
+def route_to_profile_url(perfil_url: str) -> None:
+    """Route to the student profile page from a generated profile URL."""
+    parsed = urlparse(perfil_url)
+    params = parse_qs(parsed.query or perfil_url.lstrip("?"))
+    aluno = (params.get("aluno") or [""])[0]
+    nasc = (params.get("nasc") or [None])[0]
+
+    if not aluno:
+        return
+
+    st.session_state["aluno_preselect"] = {"nome": aluno, "nasc": nasc}
+    st.session_state["menu_escolhido"] = "Aluno"
+    st.session_state["sidebar_main_menu"] = "Aluno"
+    st.rerun()
+
+
+def render_aluno_detalhamento_aggrid(df: pd.DataFrame, key: str, max_rows: int = 20, csv_name: str = None, toolbar_key: str = None):
+    """
+    Renderiza a tabela de detalhamento de alunos usando AgGrid padronizado.
+    Inclui renderização de link para o perfil e regras de altura dinâmica.
+    """
+    # Garante que nomes de colunas sejam strings
+    df.columns = df.columns.astype(str)
+
+    if df is None or df.empty:
+        st.warning("Nenhum dado para exibir.")
+        return
+
+    # 1. Toolbar Automática
+    render_table_toolbar(df, file_name=csv_name or "dados.csv", key_prefix=toolbar_key or key)
+
+    df_grid = prepare_profile_action_column(df)
+
+    # 2. Cálculo Automático da Altura (Design System)
+    grid_height = calcular_altura_aggrid(
+        df_grid,
+        limite_linhas="Todas as linhas", 
+        incluir_total=False, 
+        max_rows=max_rows
+    )
+
+    # 3. Configuração de Opções do Grid
+    gb = GridOptionsBuilder.from_dataframe(df_grid)
+    gb.configure_default_column(resizable=True, sortable=True, filter=False, suppressMenu=True)
+    
+    # Alinhamento e estilização
+    for col in df_grid.columns:
+        if col in ["Aluno", "Escola"]:
+            gb.configure_column(col, cellStyle={"textAlign": "left"}, headerClass="saedas-aggrid-left-header")
+        else:
+            gb.configure_column(col, cellStyle={"textAlign": "center"}, headerClass="saedas-aggrid-header")
+
+    if "_PerfilUrl" in df_grid.columns:
+        gb.configure_column(
+            "_PerfilUrl",
+            width=1,
+            minWidth=1,
+            maxWidth=1,
+            suppressSizeToFit=True,
+            cellStyle={
+                "color": "transparent",
+                "fontSize": "0",
+                "padding": "0",
+                "border": "0",
+            },
+            headerClass="saedas-aggrid-hidden-technical-header",
+        )
+
+    if "Perfil" in df_grid.columns:
+        gb.configure_column(
+            "Perfil",
+            width=150,
+            cellStyle={
+                "textAlign": "center",
+                "display": "flex",
+                "alignItems": "center",
+                "justifyContent": "center",
+                "overflow": "hidden",
+                "whiteSpace": "nowrap",
+            },
+        )
+
+    grid_options = gb.build()
+    
+    st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
+    render_saedas_aggrid(
+        df_grid,
+        grid_options=grid_options,
+        key=key,
+        max_rows=max_rows,
+        incluir_total=False,
+        allow_unsafe_jscode=True
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+    render_profile_click_bridge()

@@ -25,6 +25,7 @@ from app.utils.page_helpers import (
     split_aggrid_footer,
     render_table_toolbar,
     render_saedas_aggrid,
+    render_aluno_detalhamento_aggrid
 )
 from app.utils.state_manager import (
     apply_pending_table_filters,
@@ -32,6 +33,7 @@ from app.utils.state_manager import (
     sync_sidebar_escola_selection,
     sync_home_to_sidebar,
     sync_home_urg_to_sidebar,
+    sync_local_nutricao_situacao
 )
 from app.utils.schemas import (
     SCHEMA_NUTRICAO,
@@ -42,27 +44,35 @@ from app.utils.schemas import (
 from app.utils.styles import apply_global_css, render_metric_cards, apply_saedas_design, build_row_style_fn, get_table_hover_styles
 
 
+from app.utils.redis_client import redis_cache
+
 def carregar_dados_nutricao():
-    csv_file = "data/DashboardNutricao.csv"
-    df, info = load_csv(csv_file, expected_cols=SCHEMA_NUTRICAO)
-
-    csv_file_aluno = "data/DashboardNutricaoAluno.csv"
-    df_aluno_raw, info_aluno = load_csv(
-        csv_file_aluno, expected_cols=SCHEMA_NUTRICAO_ALUNO
-    )
-
-    csv_file_ano = "data/DashboardNutricaoAno.csv"
-    df_ano, info_ano = load_csv(csv_file_ano, expected_cols=SCHEMA_NUTRICAO_ANO)
-
-    csv_file_home = "data/DashboardHome.csv"
-    df_home, info_home = load_csv(csv_file_home, expected_cols=SCHEMA_HOME)
-
-    return {
-        "principal": {"df": df, "info": info, "csv": csv_file},
-        "aluno": {"df": df_aluno_raw, "info": info_aluno, "csv": csv_file_aluno},
-        "ano": {"df": df_ano, "info": info_ano, "csv": csv_file_ano},
-        "home": {"df": df_home, "info": info_home, "csv": csv_file_home},
+    """Carrega os datasets da página Nutrição com suporte a Smart Cache Redis."""
+    keys = {
+        "principal": ("saedas:nutricao:dataset:main", "data/DashboardNutricao.csv", SCHEMA_NUTRICAO),
+        "aluno": ("saedas:nutricao:dataset:aluno", "data/DashboardNutricaoAluno.csv", SCHEMA_NUTRICAO_ALUNO),
+        "ano": ("saedas:nutricao:dataset:ano", "data/DashboardNutricaoAno.csv", SCHEMA_NUTRICAO_ANO),
+        "home": ("saedas:home:dataset:main", "data/DashboardHome.csv", SCHEMA_HOME),
     }
+
+    results = {}
+    for key_id, (redis_key, csv_path, schema) in keys.items():
+        # Tenta recuperar do Redis verificando timestamp
+        df = redis_cache.get_dataframe_with_timestamp(redis_key, csv_path)
+        
+        if df is not None:
+            results[key_id] = {
+                "df": df,
+                "info": {"encoding_usado": "Redis (Cache)", "erros": [], "alertas": [], "alertas_ano": []},
+                "csv": csv_path
+            }
+        else:
+            # Fallback para o disco
+            df, info = load_csv(csv_path, expected_cols=schema)
+            results[key_id] = {"df": df, "info": info, "csv": csv_path}
+            if not df.empty:
+                redis_cache.set_dataframe_with_timestamp(redis_key, df, csv_path)
+    return results
 
 
 def page_nutricao():
@@ -75,6 +85,8 @@ def page_nutricao():
         st.session_state["nutricao_situacao_multiselect"] = (
             toggle_multiselect_value(current, nut_name)
         )
+        # Sincroniza com a chave persistente
+        st.session_state["persistent_nutricao_situacao"] = st.session_state["nutricao_situacao_multiselect"]
 
     st.title("Visão Geral da Nutrição")
     st.markdown(
@@ -377,12 +389,17 @@ def page_nutricao():
         else []
     )
     
+    # Restaura o estado persistente caso o Streamlit tenha podado a chave do widget na navegação
+    if "nutricao_situacao_multiselect" not in st.session_state:
+        st.session_state["nutricao_situacao_multiselect"] = st.session_state.get("persistent_nutricao_situacao", [])
+
     # Filtro de Situação Nutricional (Sincronizado entre Sidebar e Botões KPI)
     nutricoes_selecionadas = st.sidebar.multiselect(
         "Selecione a(s) Situação(ões) Nutricional(ais):",
         options=nutricoes_disponiveis,
         placeholder="Todas",
-        key="nutricao_situacao_multiselect"
+        key="nutricao_situacao_multiselect",
+        on_change=sync_local_nutricao_situacao
     )
 
     # 6. Filtro de Nutrição (Aplicação Final para o restante do dashboard)
@@ -470,16 +487,7 @@ def page_nutricao():
     )
 
     st.sidebar.markdown("---")
-    st.sidebar.subheader("Exportar dados")
-
-    csv_export_encoding = "utf-8"
-    csv = df_filt.to_csv(index=False, sep=";").encode(csv_export_encoding)
-    st.sidebar.download_button(
-        label="Exportar CSV (Nutrição)",
-        data=csv,
-        file_name="dados_filtrados_nutricao.csv",
-        mime="text/csv",
-    )
+    
     
     # 1. Indicador principal (Total Geral)
     # --- Cálculo de Métricas Demográficas (Vindas da Home) ---
@@ -528,7 +536,82 @@ def page_nutricao():
     else:
         st.info("Selecione ao menos um ano para visualizar os indicadores.")
 
-    st.markdown("---")
+    render_section_divider()
+    # --- NOVO: Tabela Comparativa de Performance por ANO (Nutrição) ---
+    st.subheader("Tabela Comparativa de Performance por ANO (Nutrição)")
+    df_cmp_ano_perf = build_comparativo_anual(
+        df_filt,
+        "Nutricao",
+        value_col="Quantidade",
+        pct_label="Total",
+    )
+    if df_cmp_ano_perf is not None:
+        df_ano_perf_aggrid, ano_perf_column_defs, _ = prepare_comparativo_aggrid_data(
+            df_cmp_ano_perf, include_selection_column=False
+        )
+
+        # Mantém a mesma ordem dos indicadores gerais (cards), preservando TOTAL no final.
+        if not df_ano_perf_aggrid.empty and not nutricao_sum.empty:
+            first_col = df_ano_perf_aggrid.columns[0]
+            ordem_indicadores = {
+                str(nome).strip().upper(): idx
+                for idx, nome in enumerate(nutricao_sum.index.tolist())
+            }
+            df_ano_perf_aggrid["_ordem_kpi"] = df_ano_perf_aggrid[first_col].map(
+                lambda x: ordem_indicadores.get(str(x).strip().upper(), 10**6)
+            )
+            df_ano_perf_aggrid["_is_total"] = (
+                df_ano_perf_aggrid[first_col].astype(str).str.strip().str.upper().eq("TOTAL")
+            )
+            df_ano_perf_aggrid = (
+                df_ano_perf_aggrid
+                .sort_values(by=["_is_total", "_ordem_kpi"], ascending=[True, True], kind="stable")
+                .drop(columns=["_ordem_kpi", "_is_total"])
+                .reset_index(drop=True)
+            )
+
+        df_ano_perf_body, ano_perf_footer = split_aggrid_footer(df_ano_perf_aggrid)
+
+        ano_perf_grid_options = {
+            "columnDefs": ano_perf_column_defs,
+            "defaultColDef": {
+                "resizable": True,
+                "sortable": True,
+                "filter": False,
+                "suppressMenu": True,
+            },
+            "pinnedBottomRowData": ano_perf_footer,
+        }
+
+        df_ano_perf_export = (
+            pd.concat([df_ano_perf_body, pd.DataFrame(ano_perf_footer)], ignore_index=True)
+            if ano_perf_footer
+            else df_ano_perf_body.copy()
+        )
+        with st.container(key="nutricao_ano_actions_toolbar"):
+            render_table_toolbar(
+                df_ano_perf_export,
+                "comparativo_performance_ano_nutricao.csv",
+                "ano_perf_table_nutricao",
+            )
+
+        st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
+        render_saedas_aggrid(
+            df_ano_perf_body,
+            grid_options=ano_perf_grid_options,
+            key="ano_perf_table_nutricao_aggrid",
+            incluir_total=bool(ano_perf_footer),
+            min_height=140,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.caption(
+            "Nota: As colunas '% Total' representam o percentual da Situação Nutricional no respectivo ano. "
+            "As colunas 'Var%' mostram a variação em relação ao ano anterior."
+        )
+    else:
+        st.info("Dados insuficientes para gerar a tabela comparativa de performance por ano.")
+
+    render_section_divider()
 
     # --- PRIORIDADE 2 (MEIO): TABELA COMPARATIVA DE PERFORMANCE ---
     st.subheader("Performance por URG")
@@ -574,9 +657,11 @@ def page_nutricao():
         with st.container(key="nutricao_urg_actions_toolbar"):
             render_table_toolbar(df_cmp_urg_export, "performance_urg_nutricao.csv", "urg_table_nutricao")
 
+        _years_key = "_".join(sorted(map(str, selected_years_comp))) if selected_years_comp else "all"
+        _nut_key_sel = "_".join(sorted(map(str, nutricoes_selecionadas))) if nutricoes_selecionadas else "all"
         _urg_key_sel = "_".join(sorted(map(str, current_selected_urgs))) if current_selected_urgs else "none"
-        urg_table_key = f"urg_table_nutricao_{_urg_key_sel}"
-        _urg_key_changed = st.session_state.get("_prev_urg_table_key_nutricao") != urg_table_key
+        urg_table_key = f"urg_table_nutricao_{_years_key}_{_nut_key_sel}_{_urg_key_sel}"
+        _urg_key_changed = st.session_state.get("_is_page_first_run") or (st.session_state.get("_prev_urg_table_key_nutricao") != urg_table_key)
         st.session_state["_prev_urg_table_key_nutricao"] = urg_table_key
         st.markdown('<div class="selection-master-table">', unsafe_allow_html=True)
         aggrid_response = render_saedas_aggrid(
@@ -651,7 +736,7 @@ def page_nutricao():
 
     # --- DISTRIBUIÇÃO POR SITUAÇÃO NUTRICIONAL (GRÁFICO AGRUPADO) ---
     st.subheader("Distribuição por Situação Nutricional")
-    render_grouped_bar_anual(df_filt_no_nut, "Quantidade", "", x_col="Nutricao", orientation="h")
+    render_grouped_bar_anual(df_filt, "Quantidade", "", x_col="Nutricao", orientation="h")
     
 
 
@@ -754,39 +839,18 @@ def page_nutricao():
 
             # Renomear coluna Menu para Perfil para exibição
             df_aluno_final = df_aluno_final.rename(columns={"Menu": "Perfil"})
-            preview_limit = 500
-            df_aluno_head = df_aluno_final.head(preview_limit).reset_index(drop=True)
 
-            if not df_aluno_head.empty:
-                # Aplicar design padrão (Zebra, Hover, etc)
-                styled_aluno = (
-                    df_aluno_head.style.pipe(apply_saedas_design, categoria_col="Aluno")
-                    .set_properties(**{"text-align": "left"})
-                    .hide(axis="index")
-                )
-
-                with st.container(key="nutricao_aluno_actions_toolbar"):
-                    render_table_toolbar(df_aluno_head, "detalhes_alunos_nutricao.csv", "aluno_table_nutricao")
-
-                st.markdown('<div class="st-table-with-total">', unsafe_allow_html=True)
-                st.dataframe(
-                    styled_aluno,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Perfil": st.column_config.LinkColumn(
-                            "Perfil", display_text="📄 Ver Perfil"
-                        )
-                    },
+            if not df_aluno_final.empty:
+                # Renderização da tabela de alunos usando AgGrid padronizado com Toolbar integrada
+                render_aluno_detalhamento_aggrid(
+                    df_aluno_final, 
+                    key="aluno_table_nutricao",
+                    csv_name="detalhes_alunos_nutricao.csv",
+                    toolbar_key="nutricao_aluno_actions_toolbar"
                 )
                 st.markdown("</div>", unsafe_allow_html=True)
             else:
                 st.info("Nenhum registro detalhado para exibir.")
-
-            if total_registros_aluno > preview_limit:
-                st.info(
-                    f"Exibindo apenas as primeiras {preview_limit} linhas de {total_registros_aluno}."
-                )
 
     st.markdown(" ")
     footer_personal()
